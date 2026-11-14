@@ -12,7 +12,7 @@ from app.services import export, subtitles
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config.get_api_key()  # 缺少 key 時啟動即報錯
-    config.CACHE_DIR.mkdir(exist_ok=True)
+    config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     yield
 
 

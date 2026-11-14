@@ -3,3 +3,8 @@ cache/
 .venv/
 __pycache__/
 .pytest_cache/
+packaging/build/
+packaging/dist/
+# 桌面版的使用者資料（開發模式下資料夾 = 專案根目錄）：瀏覽器資料（含 cookie、localStorage）與記錄檔
+webview/
+tubetran.log

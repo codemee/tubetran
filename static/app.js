@@ -140,6 +140,10 @@ function toggleFullscreen() {
   else $("stage").requestFullscreen?.();
 }
 $("fs").addEventListener("click", toggleFullscreen);
+// 桌面版（pywebview）：網頁全螢幕只會填滿視窗內容，要同步讓整個視窗全螢幕。瀏覽器裡沒有這個橋接，什麼都不會做
+document.addEventListener("fullscreenchange", () => {
+  try { window.pywebview?.api?.set_fullscreen(!!document.fullscreenElement); } catch (_) {}
+});
 document.addEventListener("keydown", (e) => {
   if ((e.key === "f" || e.key === "F") && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) {
     toggleFullscreen();
