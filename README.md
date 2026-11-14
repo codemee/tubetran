@@ -30,7 +30,7 @@
 
 | | 桌面模式（預設） | 伺服器模式（`--server`） |
 | --- | --- | --- |
-| 啟動 | `python -m app` 或 `TubeTran.exe` | `python -m app --server` 或 `TubeTran.exe --server` |
+| 啟動 | `python -m tubetran` 或 `TubeTran.exe` | `python -m tubetran --server` 或 `TubeTran.exe --server` |
 | 介面 | 獨立視窗（使用系統的 WebView2） | 沒有視窗，用瀏覽器開 http://127.0.0.1:8000/ |
 | 埠號 | 固定 `47321`（被占用時改用隨機埠），只接受本機連線 | 預設 `8000`，可用 `--host`、`--port` 修改 |
 | 額外需求 | `desktop` 額外套件（pywebview）；Windows 需有 WebView2 | 無 |
@@ -42,16 +42,31 @@
 
 ## 安裝與執行
 
-需要 [uv](https://docs.astral.sh/uv/)。專案釘選 Python 3.12（較新的版本可能缺少部分依賴的預編譯套件）。主要在 Windows 11 上開發與測試。
+需要 [uv](https://docs.astral.sh/uv/)。Python 版本限定 3.12–3.13（較新的版本可能缺少部分依賴的預編譯套件）。主要在 Windows 11 上開發與測試。
+
+### 用 `uv tool install` 安裝（建議）
+
+```powershell
+uv tool install ".[desktop]"         # 在專案資料夾執行；只用伺服器模式的話可省略 [desktop]
+# 或直接從 GitHub：uv tool install "tubetran[desktop] @ git+https://github.com/codemee/tubetran.git"
+
+tubetran --help                      # 查看所有參數
+tubetran --server                    # 伺服器模式：http://127.0.0.1:8000/
+tubetran                             # 桌面模式（需要 [desktop]）
+```
+
+第一次執行前，在[資料資料夾](#資料資料夾)建立 `.env` 並填入 `ANTHROPIC_API_KEY`（內容可參考 `.env.example`）；也可以直接設定同名的環境變數。更新用 `uv tool upgrade tubetran`（從本機資料夾安裝的話，改完程式後用 `uv tool install --reinstall ".[desktop]"`），移除用 `uv tool uninstall tubetran`。
+
+### 從原始碼執行（開發用）
 
 ```powershell
 uv sync --extra desktop              # 桌面模式需要；只用伺服器模式的話只需 uv sync
 Copy-Item .env.example .env          # 然後編輯 .env，填入 ANTHROPIC_API_KEY
 
-uv run python -m app                 # 桌面模式
-uv run python -m app --server        # 伺服器模式：http://127.0.0.1:8000/
-uv run python -m app --server --host 0.0.0.0 --port 9000   # 讓區網連線（請先閱讀上方警告）
-uv run python -m app --help          # 查看所有參數
+uv run python -m tubetran                 # 桌面模式
+uv run python -m tubetran --server        # 伺服器模式：http://127.0.0.1:8000/
+uv run python -m tubetran --server --host 0.0.0.0 --port 9000   # 讓區網連線（請先閱讀上方警告）
+uv run python -m tubetran --help          # 查看所有參數
 ```
 
 不需要預先安裝 `ffmpeg`（語音辨識使用 PyAV 內建的解碼程式庫）；若 `yt-dlp` 對特定影片提示需要它，再安裝即可（`scoop install ffmpeg`）。
@@ -73,9 +88,9 @@ uv run python -m app --help          # 查看所有參數
 
 `.env`、快取與桌面版的設定都放在「資料資料夾」，位置依序為：
 
-1. 環境變數 `TRANTUBE_DATA_DIR`（若有設定）
-2. 打包後的程式：`%LOCALAPPDATA%\TubeTran`
-3. 開發時（直接從原始碼執行）：專案根目錄
+1. 環境變數 `TUBETRAN_DATA_DIR`（若有設定）
+2. 開發時（直接從原始碼資料夾執行）：專案根目錄
+3. 其他情況（`uv tool install` 安裝、打包後的程式）：使用者資料目錄 — Windows 是 `%LOCALAPPDATA%\TubeTran`，macOS 是 `~/Library/Application Support/TubeTran`，Linux 是 `$XDG_DATA_HOME/TubeTran`（未設定時為 `~/.local/share/TubeTran`）
 
 資料夾內容：
 
@@ -102,22 +117,21 @@ uv run pyinstaller packaging/TubeTran.spec --noconfirm --clean --distpath packag
 ## 專案結構
 
 ```
-app/
+tubetran/
   cli.py            命令列入口：桌面模式／--server
   config.py         設定與資料資料夾
   main.py           FastAPI 路由與靜態檔
   jobs.py           背景任務、快取、影片庫、播放進度
   services/         subtitles（字幕）、transcribe（Whisper）、translate（翻譯）、review（檢查）、export（SRT/VTT）
-static/             前端（無建置步驟）：index.html、app.js、i18n.js、style.css、logo/
-packaging/          PyInstaller 設定
+  static/           前端（無建置步驟）：index.html、app.js、i18n.js、style.css、logo/
+packaging/          PyInstaller 設定與啟動入口（launch.py）
 tests/              pytest
-tubetran.py         打包用的啟動入口
 ```
 
 ## 開發與測試
 
 ```powershell
-uv run uvicorn app.main:app --reload --reload-dir app   # 開發用：改程式自動重載
+uv run uvicorn tubetran.main:app --reload --reload-dir tubetran   # 開發用：改程式自動重載
 uv run pytest
 ```
 

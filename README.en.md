@@ -30,7 +30,7 @@ Results are cached in `cache/<video_id>/` inside the data folder, so the same vi
 
 | | Desktop mode (default) | Server mode (`--server`) |
 | --- | --- | --- |
-| Start | `python -m app` or `TubeTran.exe` | `python -m app --server` or `TubeTran.exe --server` |
+| Start | `python -m tubetran` or `TubeTran.exe` | `python -m tubetran --server` or `TubeTran.exe --server` |
 | UI | A standalone window (uses the system's WebView2) | No window; open http://127.0.0.1:8000/ in a browser |
 | Port | Fixed `47321` (a random port if it is taken); local connections only | `8000` by default; change with `--host` and `--port` |
 | Extra requirements | The `desktop` extra (pywebview); WebView2 on Windows | None |
@@ -42,16 +42,31 @@ Both modes share the same backend and frontend. In desktop mode the backend is a
 
 ## Setup & run
 
-Requires [uv](https://docs.astral.sh/uv/). The project pins Python 3.12 (newer versions may lack prebuilt wheels for some dependencies). Developed and tested mainly on Windows 11.
+Requires [uv](https://docs.astral.sh/uv/). Python is limited to 3.12–3.13 (newer versions may lack prebuilt wheels for some dependencies). Developed and tested mainly on Windows 11.
+
+### Install with `uv tool install` (recommended)
+
+```powershell
+uv tool install ".[desktop]"         # run in the project folder; drop [desktop] if you only need server mode
+# or straight from GitHub: uv tool install "tubetran[desktop] @ git+https://github.com/codemee/tubetran.git"
+
+tubetran --help                      # list all options
+tubetran --server                    # server mode: http://127.0.0.1:8000/
+tubetran                             # desktop mode (needs [desktop])
+```
+
+Before the first run, create a `.env` in the [data folder](#data-folder) and set `ANTHROPIC_API_KEY` (see `.env.example` for the contents); an environment variable of the same name also works. Upgrade with `uv tool upgrade tubetran` (if installed from a local folder, use `uv tool install --reinstall ".[desktop]"` after changing code); remove with `uv tool uninstall tubetran`.
+
+### Run from source (development)
 
 ```powershell
 uv sync --extra desktop              # needed for desktop mode; server mode only needs plain `uv sync`
 Copy-Item .env.example .env          # then edit .env and set ANTHROPIC_API_KEY
 
-uv run python -m app                 # desktop mode
-uv run python -m app --server        # server mode: http://127.0.0.1:8000/
-uv run python -m app --server --host 0.0.0.0 --port 9000   # allow LAN access (read the warning above first)
-uv run python -m app --help          # list all options
+uv run python -m tubetran                 # desktop mode
+uv run python -m tubetran --server        # server mode: http://127.0.0.1:8000/
+uv run python -m tubetran --server --host 0.0.0.0 --port 9000   # allow LAN access (read the warning above first)
+uv run python -m tubetran --help          # list all options
 ```
 
 You do not need to install `ffmpeg` beforehand (speech recognition uses the decoding libraries bundled with PyAV); if `yt-dlp` asks for it for a particular video, install it then (`scoop install ffmpeg`).
@@ -73,9 +88,9 @@ faster-whisper uses the GPU automatically when CUDA is available; the model is d
 
 `.env`, the cache and the desktop app's settings all live in the "data folder", located by (in order):
 
-1. The `TRANTUBE_DATA_DIR` environment variable, if set
-2. Packaged app: `%LOCALAPPDATA%\TubeTran`
-3. Development (running from source): the project root
+1. The `TUBETRAN_DATA_DIR` environment variable, if set
+2. Development (running from the source folder): the project root
+3. Otherwise (`uv tool install`, packaged app): the user data directory — `%LOCALAPPDATA%\TubeTran` on Windows, `~/Library/Application Support/TubeTran` on macOS, `$XDG_DATA_HOME/TubeTran` on Linux (`~/.local/share/TubeTran` if unset)
 
 Contents:
 
@@ -102,22 +117,21 @@ The packaged program runs in desktop mode by default, and `--server` switches to
 ## Project layout
 
 ```
-app/
+tubetran/
   cli.py            Command-line entry: desktop mode / --server
   config.py         Settings and the data folder
   main.py           FastAPI routes and static files
   jobs.py           Background jobs, cache, library, playback progress
   services/         subtitles, transcribe (Whisper), translate, review (check), export (SRT/VTT)
-static/             Frontend (no build step): index.html, app.js, i18n.js, style.css, logo/
-packaging/          PyInstaller configuration
+  static/           Frontend (no build step): index.html, app.js, i18n.js, style.css, logo/
+packaging/          PyInstaller configuration and launcher (launch.py)
 tests/              pytest
-tubetran.py         Launcher script used for packaging
 ```
 
 ## Development & tests
 
 ```powershell
-uv run uvicorn app.main:app --reload --reload-dir app   # development: reload on code changes
+uv run uvicorn tubetran.main:app --reload --reload-dir tubetran   # development: reload on code changes
 uv run pytest
 ```
 

@@ -4,7 +4,7 @@ from typing import Callable
 
 import yt_dlp
 
-from app import config
+from tubetran import config
 
 
 def download_audio(video_id: str, out_dir: Path) -> Path:

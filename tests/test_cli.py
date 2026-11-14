@@ -1,8 +1,9 @@
+import sys
 from pathlib import Path
 
 import pytest
 
-from app import cli, config
+from tubetran import cli, config
 
 
 def test_defaults_are_desktop_mode():
@@ -41,20 +42,40 @@ def test_app_icon_is_a_valid_multi_size_ico():
 
 
 def test_data_dir_env_override_wins(tmp_path, monkeypatch):
-    monkeypatch.setenv("TRANTUBE_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("TUBETRAN_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(config, "FROZEN", True)
     assert config.resolve_data_dir() == tmp_path.resolve()
 
 
 def test_data_dir_frozen_uses_localappdata(tmp_path, monkeypatch):
-    monkeypatch.delenv("TRANTUBE_DATA_DIR", raising=False)
+    monkeypatch.delenv("TUBETRAN_DATA_DIR", raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setattr(config, "FROZEN", True)
+    monkeypatch.setattr(sys, "platform", "win32")
     assert config.resolve_data_dir() == tmp_path / "TubeTran"
 
 
+def test_data_dir_installed_package_uses_user_data_dir(tmp_path, monkeypatch):
+    """uv tool install 之後 tubetran 套件在 site-packages（旁邊沒有 pyproject.toml），資料不能寫進去。"""
+    monkeypatch.delenv("TUBETRAN_DATA_DIR", raising=False)
+    monkeypatch.setattr(config, "FROZEN", False)
+    monkeypatch.setattr(config, "_PROJECT_ROOT", tmp_path / "site-packages")
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    assert config.resolve_data_dir() == tmp_path / "xdg" / "TubeTran"
+
+
+def test_user_data_dir_per_platform(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert config.user_data_dir() == tmp_path / "Library" / "Application Support" / "TubeTran"
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert config.user_data_dir() == tmp_path / ".local" / "share" / "TubeTran"
+
+
 def test_data_dir_dev_is_project_root(monkeypatch):
-    monkeypatch.delenv("TRANTUBE_DATA_DIR", raising=False)
+    monkeypatch.delenv("TUBETRAN_DATA_DIR", raising=False)
     monkeypatch.setattr(config, "FROZEN", False)
     assert config.resolve_data_dir() == Path(config.__file__).resolve().parent.parent
 

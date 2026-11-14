@@ -5,8 +5,8 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import config, jobs
-from app.services import export, subtitles
+from tubetran import config, jobs
+from tubetran.services import export, subtitles
 
 
 @asynccontextmanager
@@ -16,7 +16,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="trantube", lifespan=lifespan)
+app = FastAPI(title="TubeTran", lifespan=lifespan)
 
 
 class ProcessReq(BaseModel):

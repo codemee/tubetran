@@ -15,7 +15,7 @@ import sys
 import threading
 import time
 
-from app import config
+from tubetran import config
 
 WINDOW_TITLE = "水管譯工"
 
@@ -86,7 +86,7 @@ def selftest() -> int:
 def run_server(host: str, port: int) -> int:
     import uvicorn
 
-    from app.main import app
+    from tubetran.main import app
 
     print(f"{WINDOW_TITLE} 伺服器模式：http://{host}:{port}/  （Ctrl+C 結束）", flush=True)
     uvicorn.run(app, host=host, port=port, log_level="info")
@@ -115,7 +115,7 @@ class _BackgroundServer:
     def __init__(self, port: int):
         import uvicorn
 
-        from app.main import app
+        from tubetran.main import app
 
         self.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info"))
         self.thread = threading.Thread(target=self.server.run, name="backend", daemon=True)
@@ -181,7 +181,10 @@ def run_desktop() -> int:
     try:
         import webview
     except ImportError:
-        print("桌面模式需要安裝 pywebview：uv sync --extra desktop", file=sys.stderr)
+        print("桌面模式需要 pywebview。安裝時加上 desktop 額外套件：\n"
+              "  uv tool install \"tubetran[desktop]\"（從原始碼資料夾則是 uv tool install \".[desktop]\"）\n"
+              "  或在專案內 uv sync --extra desktop\n"
+              "只想用瀏覽器的話可改用：tubetran --server", file=sys.stderr)
         return 1
     _set_app_user_model_id()
 

@@ -160,9 +160,13 @@ body {
   position: absolute; left: 4%; right: 4%; bottom: max(56px, 9%); z-index: 1;
   text-align: center; pointer-events: none;
   font-size: clamp(14px, 2.6cqw, 44px); line-height: 1.4; color: #fff;
-  text-shadow: 0 0 4px #000, 0 0 4px #000, 1px 1px 2px #000;
+  text-shadow: 0 1px 2px #000;
 }
-#overlay div { margin-top: .15em; }
+/* 每行字幕自帶半透明黑底，才不會和影片畫面（尤其是燙在影片上的字）混在一起 */
+#overlay div {
+  width: fit-content; max-width: 100%; margin: .2em auto 0; padding: .08em .55em .12em;
+  background: rgba(0, 0, 0, .78); border-radius: .3em; font-weight: 500;
+}
 #overlay .t { color: #fde047; }
 #fs {
   position: absolute; top: 10px; right: 10px; z-index: 2;

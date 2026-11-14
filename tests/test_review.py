@@ -3,9 +3,9 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, jobs
-from app.main import app
-from app.services import review
+from tubetran import config, jobs
+from tubetran.main import app
+from tubetran.services import review
 
 
 def seg(start, end, text, trans="譯"):

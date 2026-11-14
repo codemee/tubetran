@@ -6,7 +6,7 @@
 # 同一個執行檔：直接執行 = 桌面模式；加 --server = 伺服器模式。
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-datas = [("../static", "static")]  # 前端靜態檔
+datas = [("../tubetran/static", "tubetran/static")]  # 前端靜態檔（config.STATIC_DIR = 套件目錄/static）
 binaries = []
 hiddenimports = collect_submodules("uvicorn") + ["httptools", "websockets"]
 
@@ -18,7 +18,7 @@ for pkg in ("faster_whisper", "ctranslate2"):
     hiddenimports += h
 
 a = Analysis(
-    ["../tubetran.py"],
+    ["launch.py"],
     pathex=[".."],
     binaries=binaries,
     datas=datas,
@@ -34,7 +34,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name="TubeTran",
-    console=False,  # 視窗程式：不跳出主控台；命令列用法由 app/cli.py 附著到父終端機
-    icon="../static/logo/tubetran.ico",  # 執行檔（檔案總管、工作列）的圖示；視窗標題列則由 app/cli.py 指定同一個檔案
+    console=False,  # 視窗程式：不跳出主控台；命令列用法由 tubetran/cli.py 附著到父終端機
+    icon="../tubetran/static/logo/tubetran.ico",  # 執行檔（檔案總管、工作列）的圖示；視窗標題列則由 tubetran/cli.py 指定同一個檔案
 )
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="TubeTran")

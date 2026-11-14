@@ -3,8 +3,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, jobs
-from app.main import app
+from tubetran import config, jobs
+from tubetran.main import app
 
 
 @pytest.fixture

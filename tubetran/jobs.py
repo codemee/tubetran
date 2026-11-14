@@ -6,8 +6,8 @@ import threading
 import time
 from dataclasses import asdict, dataclass
 
-from app import config
-from app.services import review, subtitles, transcribe, translate
+from tubetran import config
+from tubetran.services import review, subtitles, transcribe, translate
 
 
 @dataclass

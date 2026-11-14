@@ -5,7 +5,7 @@ from typing import Callable
 
 import anthropic
 
-from app import config
+from tubetran import config
 
 SYSTEM_PROMPT = """你是專業的影片字幕翻譯。將輸入字幕翻譯成繁體中文（台灣用語）。
 規則：

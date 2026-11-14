@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services import export, subtitles, translate
+from tubetran.services import export, subtitles, translate
 
 
 def test_parse_video_id():
