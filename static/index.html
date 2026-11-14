@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>水管譯工</title>
-  <link id="favicon" rel="icon" href="/static/logo/tubetran-rx78-light-icon.svg" type="image/svg+xml">
+  <link id="favicon" rel="icon" href="/static/logo/tubetran-light-icon.svg" type="image/svg+xml">
   <meta name="theme-color" content="#1646a0" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#1a1030" media="(prefers-color-scheme: dark)">
   <meta name="color-scheme" content="light dark">
@@ -24,19 +24,17 @@
       document.title = eff === "en" ? "TubeTran" : "水管譯工";
       var dark = theme === "dark" || (theme === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
       document.getElementById("favicon").href =
-        "/static/logo/" + (dark ? "tubetran-eva-dark-icon.svg" : "tubetran-rx78-light-icon.svg");
+        "/static/logo/" + (dark ? "tubetran-dark-icon.svg" : "tubetran-light-icon.svg");
     })();
   </script>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <header class="topbar">
-    <!-- 標誌：淺色＝RX-78-2、深色＝EVA 初號機；中文／英文各一版，由 CSS 依主題與語系只顯示其中一個 -->
+    <!-- 標誌：只有圖示，不放程式名稱（名稱只出現在網頁標題與桌面版視窗標題）；淺色／深色各一個，由 CSS 依主題只顯示其中一個 -->
     <div class="brand">
-      <img class="brand-logo light zh" src="/static/logo/tubetran-rx78-light-zh-TW.svg" alt="水管譯工" data-i18n-attr="alt:brand_alt">
-      <img class="brand-logo light en" src="/static/logo/tubetran-rx78-light-en.svg" alt="水管譯工" data-i18n-attr="alt:brand_alt">
-      <img class="brand-logo dark zh" src="/static/logo/tubetran-eva-dark-zh-TW.svg" alt="水管譯工" data-i18n-attr="alt:brand_alt">
-      <img class="brand-logo dark en" src="/static/logo/tubetran-eva-dark-en.svg" alt="水管譯工" data-i18n-attr="alt:brand_alt">
+      <img class="brand-logo light" src="/static/logo/tubetran-light-icon.svg" alt="" aria-hidden="true">
+      <img class="brand-logo dark" src="/static/logo/tubetran-dark-icon.svg" alt="" aria-hidden="true">
     </div>
     <form id="form">
       <input id="url" placeholder="貼上 YouTube 網址，按 Enter 載入" data-i18n-attr="placeholder:url_ph" required autocomplete="off">
@@ -117,12 +115,15 @@
       </details>
     </section>
 
-    <aside class="col-side">
-      <div class="side-head">
-        <h2 data-i18n="side_title">已翻譯的影片</h2>
-        <span id="lib-count" class="badge"></span>
+    <aside class="col-side" aria-label="已翻譯的影片" data-i18n-attr="aria-label:side_title">
+      <!-- 搜尋與標籤篩選：放在 #library 之外，清單重畫時不會失去輸入焦點 -->
+      <div id="lib-tools" hidden>
+        <input id="lib-search" type="search" placeholder="搜尋標題或標籤" autocomplete="off"
+               data-i18n-attr="placeholder:lib_search_ph;aria-label:lib_search_ph">
+        <div id="tag-filter" role="group" aria-label="依標籤篩選" data-i18n-attr="aria-label:tag_filter_label"></div>
       </div>
       <div id="library"></div>
+      <datalist id="tag-suggest"></datalist>
     </aside>
   </main>
   <script src="/static/i18n.js"></script>

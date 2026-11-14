@@ -29,10 +29,10 @@ function getTheme() {
   try { const v = localStorage.getItem("theme"); return v === "light" || v === "dark" ? v : "auto"; }
   catch (_) { return "auto"; }
 }
-// 分頁圖示（icon）依「實際生效的主題」切換：淺色＝RX-78-2、深色＝EVA 初號機
+// 分頁圖示（icon）依「實際生效的主題」切換淺色／深色版
 function updateFavicon() {
   const th = getTheme(), dark = th === "dark" || (th === "auto" && darkMQ.matches);
-  $("favicon").href = `/static/logo/${dark ? "tubetran-eva-dark-icon.svg" : "tubetran-rx78-light-icon.svg"}`;
+  $("favicon").href = `/static/logo/${dark ? "tubetran-dark-icon.svg" : "tubetran-light-icon.svg"}`;
 }
 function setTheme(v) {
   if (v === "auto") root.removeAttribute("data-theme"); else root.dataset.theme = v;
@@ -387,35 +387,155 @@ async function loadLibrary() {
   else if (!needTitle) libRetry = 0;
 }
 
+// ── 搜尋與標籤篩選 ──
+// libQuery：搜尋文字（比對原標題、譯名、標籤）；libTags：選取中的標籤（忽略大小寫，需同時符合）
+let libQuery = "", editingId = null, focusEditor = false;
+const libTags = new Set();
+const tagKey = (s) => s.toLowerCase();
+const hasTag = (v, key) => (v.tags || []).some((x) => tagKey(x) === key);
+
+function filteredLibrary() {
+  const q = libQuery.trim().toLowerCase();
+  return library.filter((v) => {
+    for (const k of libTags) if (!hasTag(v, k)) return false;
+    if (!q) return true;
+    return [v.title, v.title_trans, ...(v.tags || [])].some((s) => (s || "").toLowerCase().includes(q));
+  });
+}
+
+// 所有標籤與使用次數（同名不分大小寫，顯示第一次看到的寫法），次數多的在前
+function allTags() {
+  const m = new Map();
+  for (const v of library) for (const tag of v.tags || []) {
+    const k = tagKey(tag), cur = m.get(k);
+    if (cur) cur.count++; else m.set(k, { label: tag, count: 1 });
+  }
+  return [...m].map(([key, o]) => ({ key, ...o }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+function renderTagFilter(tags) {
+  for (const k of [...libTags]) if (!tags.some((x) => x.key === k)) libTags.delete(k); // 標籤已不存在就取消選取
+  const chips = tags.map((x) =>
+    `<button type="button" class="tagchip${libTags.has(x.key) ? " on" : ""}" data-tag="${esc(x.key)}" aria-pressed="${libTags.has(x.key)}" title="${esc(t("tag_filter_title", { tag: x.label }))}">${esc(x.label)} <small>${x.count}</small></button>`);
+  if (chips.length && (libTags.size || libQuery.trim())) {
+    chips.push(`<button type="button" class="tagchip clear" data-tagclear>${esc(t("tag_clear"))}</button>`);
+  }
+  const html = chips.join("");
+  const box = $("tag-filter");
+  if (box.dataset.html !== html) { box.dataset.html = html; box.innerHTML = html; }
+  $("tag-suggest").innerHTML = tags.map((x) => `<option value="${esc(x.label)}">`).join("");
+}
+
 function renderLibrary() {
-  $("lib-count").textContent = library.length ? String(library.length) : "";
+  $("lib-tools").hidden = !library.length;
   if (!library.length) {
     libKey = "";
+    $("tag-filter").dataset.html = ""; $("tag-filter").innerHTML = "";
     $("library").innerHTML = `<div class="lib-empty">${t("lib_empty")}</div>`;
     return;
   }
+  renderTagFilter(allTags());
+  const shown = filteredLibrary();
   // 只有清單結構改變時才整個重畫（避免縮圖閃爍、失去 hover／焦點）；進度只做局部更新
-  const key = JSON.stringify([videoId, library.map((v) => [v.video_id, v.status, v.title, v.title_trans])]);
+  const key = JSON.stringify([
+    videoId, editingId, [...libTags], // 選取中的標籤也要算：卡片上標籤的「選取」樣式會跟著變
+    shown.map((v) => [v.video_id, v.status, v.title, v.title_trans, v.tags]),
+  ]);
   if (key !== libKey) {
     libKey = key;
-    $("library").innerHTML = libraryHtml();
+    // 重畫前記下標籤輸入框的內容與焦點，避免背景進度更新時打到一半的字消失
+    const ae = document.activeElement;
+    const keep = ae?.classList?.contains("tag-input") ? { value: ae.value, id: ae.closest(".item")?.dataset.id } : null;
+    $("library").innerHTML = shown.length
+      ? libraryHtml(shown)
+      : `<div class="lib-empty">${t("lib_no_match")}</div>`;
+    if (editingId) {
+      const inp = document.querySelector(`.item[data-id="${editingId}"] .tag-input`);
+      if (inp) {
+        if (keep && keep.id === editingId) inp.value = keep.value;
+        if (focusEditor || keep) inp.focus();
+      }
+      focusEditor = false;
+    }
   }
-  library.forEach((v) => { paintResume(v); paintStatus(v); });
+  shown.forEach((v) => { paintResume(v); paintStatus(v); });
   syncTitleFromLibrary();
 }
 
-function libraryHtml() {
-  return library.map((v) => `
-    <div class="item${v.video_id === videoId ? " active" : ""}${v.status !== "done" ? ` pending ${v.status}` : ""}" data-id="${v.video_id}" role="button" tabindex="0">
+// 標籤列：點標籤可篩選；「＋ 標籤」進入編輯。編輯中改顯示可移除的標籤與輸入框
+function tagsHtml(v) {
+  const tags = v.tags || [];
+  if (v.video_id === editingId) {
+    return `<div class="tag-editor">
+      ${tags.map((x) => `<span class="tagchip mine">${esc(x)}<button type="button" data-tagdel="${esc(x)}" title="${esc(t("tag_remove", { tag: x }))}" aria-label="${esc(t("tag_remove", { tag: x }))}">×</button></span>`).join("")}
+      <input class="tag-input" list="tag-suggest" maxlength="20" autocomplete="off" placeholder="${esc(t("tag_input_ph"))}" aria-label="${esc(t("tag_input_ph"))}">
+      <button type="button" class="tagchip on" data-tagdone title="${esc(t("tag_done"))}" aria-label="${esc(t("tag_done"))}">✓</button>
+    </div>`;
+  }
+  return `<div class="tags">
+    ${tags.map((x) => `<button type="button" class="tagchip${libTags.has(tagKey(x)) ? " on" : ""}" data-tag="${esc(tagKey(x))}">${esc(x)}</button>`).join("")}
+    <button type="button" class="tagchip add" data-tagedit="${v.video_id}" title="${esc(t("tag_add_title"))}">${esc(t("tag_add"))}</button>
+  </div>`;
+}
+
+// 儲存標籤：先樂觀更新畫面，再送到後端；請求依序送出，避免快速連續操作時舊結果蓋掉新結果
+let tagQueue = Promise.resolve();
+function saveTags(id, tags) {
+  const cur = () => library.find((x) => x.video_id === id);
+  const v = cur();
+  if (!v) return;
+  const prev = v.tags || [];
+  v.tags = tags;
+  renderLibrary();
+  tagQueue = tagQueue.then(async () => {
+    try {
+      const res = await fetch(`/api/library/${id}/tags`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags }),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail);
+      const saved = (await res.json()).tags;
+      if (cur()) cur().tags = saved; // 以後端整理過的結果為準（去重、截斷）
+    } catch (err) {
+      if (cur()) cur().tags = prev;
+      setStatus(() => serverMsg(err.message), true);
+    }
+    renderLibrary();
+  });
+}
+
+function addTag(id, raw) {
+  const v = library.find((x) => x.video_id === id);
+  const tag = raw.replace(/\s+/g, " ").trim().slice(0, 20);
+  if (!v || !tag) return;
+  if (hasTag(v, tagKey(tag))) return;
+  saveTags(id, [...(v.tags || []), tag]);
+}
+
+// 卡片的 tooltip：標題（譯名／原標題）與字幕資訊（來源、句數、日期、看到哪裡）。
+// 這些資訊不佔卡片版面，滑過卡片才顯示；看到哪裡由 paintResume 隨播放更新。
+function cardTip(v) {
+  const names = v.title_trans && v.title_trans !== v.title ? [v.title_trans, v.title] : [v.title];
+  const meta = t("meta", { via: viaLabel(v.via), count: v.count, date: new Date(v.mtime * 1000).toLocaleDateString(effLang()) });
+  const seen = v.position > 0 ? t("seen", { time: fmt(v.position) }) : "";
+  return [...names, meta + seen].join("\n");
+}
+
+function libraryHtml(list) {
+  return list.map((v) => `
+    <div class="item${v.video_id === videoId ? " active" : ""}${v.status !== "done" ? ` pending ${v.status}` : ""}" data-id="${v.video_id}" role="button" tabindex="0" title="${esc(cardTip(v))}">
       <div class="pfill"><i></i></div>
-      <img loading="lazy" alt="" src="https://i.ytimg.com/vi/${v.video_id}/mqdefault.jpg">
+      <div class="thumb">
+        <img loading="lazy" alt="" src="https://i.ytimg.com/vi/${v.video_id}/mqdefault.jpg">
+        <div class="resume" hidden><i></i></div>
+        ${tagsHtml(v)}
+      </div>
       <div class="info">
         ${v.title_trans && v.title_trans !== v.title
-          ? `<div class="name" title="${esc(v.title_trans)}">${esc(v.title_trans)}</div><div class="orig" title="${esc(v.title)}">${esc(v.title)}</div>`
-          : `<div class="name" title="${esc(v.title)}">${esc(v.title)}</div>`}
-        <div class="meta">${esc(t("meta", { via: viaLabel(v.via), count: v.count, date: new Date(v.mtime * 1000).toLocaleDateString(effLang()) }))}<span class="seen"></span></div>
+          ? `<div class="name">${esc(v.title_trans)}</div><div class="orig">${esc(v.title)}</div>`
+          : `<div class="name">${esc(v.title)}</div>`}
         <div class="state" hidden></div>
-        <div class="resume" hidden><i></i></div>
       </div>
       ${v.status === "done" ? `<button class="chk" type="button" data-chk="${v.video_id}" title="${esc(t("chk"))}" aria-label="${esc(t("chk"))}">${CHECK_ICON}</button>` : ""}
       <button class="del" type="button" data-del="${v.video_id}" title="${esc(t("del"))}" aria-label="${esc(t("del"))}">✕</button>
@@ -491,12 +611,12 @@ function paintStatus(v) {
   }
 }
 
-// 影片庫項目上的「上次看到」文字與細進度條
+// 影片庫項目上的觀看進度條（疊在縮圖上）；「看到哪裡」的文字則更新在卡片的 tooltip 裡
 function paintResume(v) {
   const el = document.querySelector(`.item[data-id="${v.video_id}"]`);
   if (!el) return;
   const has = v.position > 0;
-  el.querySelector(".seen").textContent = has ? t("seen", { time: fmt(v.position) }) : "";
+  el.title = cardTip(v);
   const bar = el.querySelector(".resume");
   bar.hidden = !(has && v.duration);
   bar.firstElementChild.style.width = `${Math.min(100, (v.position / (v.duration || 1)) * 100)}%`;
@@ -521,7 +641,32 @@ async function deleteVideo(id) {
   loadLibrary();
 }
 
+// 篩選列：點標籤切換（可複選）、清除篩選、搜尋
+$("tag-filter").addEventListener("click", (e) => {
+  if (e.target.closest("[data-tagclear]")) { libTags.clear(); libQuery = ""; $("lib-search").value = ""; renderLibrary(); return; }
+  const chip = e.target.closest("[data-tag]");
+  if (!chip) return;
+  const k = chip.dataset.tag;
+  libTags.has(k) ? libTags.delete(k) : libTags.add(k);
+  renderLibrary();
+});
+$("lib-search").addEventListener("input", (e) => { libQuery = e.target.value; renderLibrary(); });
+
 $("library").addEventListener("click", (e) => {
+  // 標籤相關的點擊都不應該開啟影片
+  const tag = e.target.closest("[data-tag]");
+  if (tag) { e.stopPropagation(); const k = tag.dataset.tag; libTags.has(k) ? libTags.delete(k) : libTags.add(k); renderLibrary(); return; }
+  const edit = e.target.closest("[data-tagedit]");
+  if (edit) { e.stopPropagation(); editingId = edit.dataset.tagedit; focusEditor = true; renderLibrary(); return; }
+  const tdel = e.target.closest("[data-tagdel]");
+  if (tdel) {
+    e.stopPropagation();
+    const id = tdel.closest(".item").dataset.id, v = library.find((x) => x.video_id === id);
+    if (v) { focusEditor = true; saveTags(id, (v.tags || []).filter((x) => x !== tdel.dataset.tagdel)); }
+    return;
+  }
+  if (e.target.closest("[data-tagdone]")) { e.stopPropagation(); editingId = null; renderLibrary(); return; }
+  if (e.target.closest(".tag-editor")) return;
   const del = e.target.closest("[data-del]");
   if (del) { e.stopPropagation(); deleteVideo(del.dataset.del); return; }
   const chk = e.target.closest("[data-chk]");
@@ -530,6 +675,23 @@ $("library").addEventListener("click", (e) => {
   if (item && item.dataset.id !== videoId) openUrl(item.dataset.id);
 });
 $("library").addEventListener("keydown", (e) => {
+  if (e.target.classList.contains("tag-input")) {
+    if (e.isComposing || e.keyCode === 229) return; // 輸入法選字中（例如注音按 Enter 確認），不要當成新增
+    const id = e.target.closest(".item").dataset.id, v = library.find((x) => x.video_id === id);
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      const val = e.target.value;
+      e.target.value = ""; // 先清空：addTag 會同步重畫，重畫時會保留輸入框目前的內容
+      focusEditor = true;
+      addTag(id, val);
+    } else if (e.key === "Backspace" && !e.target.value && v?.tags?.length) {
+      focusEditor = true;
+      saveTags(id, v.tags.slice(0, -1)); // 輸入框是空的時按 Backspace：移除最後一個標籤
+    } else if (e.key === "Escape") {
+      editingId = null; renderLibrary();
+    }
+    return;
+  }
   if ((e.key === "Enter" || e.key === " ") && e.target.classList.contains("item")) {
     e.preventDefault();
     if (e.target.dataset.id !== videoId) openUrl(e.target.dataset.id);

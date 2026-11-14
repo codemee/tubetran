@@ -12,8 +12,9 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
 - Subtitles are overlaid on the video and stay visible in fullscreen (press `F`); switch between bilingual / original / translation, and export SRT / VTT.
 - Translated lines are usable while translation is still running; the rest continues in the background, with a clear progress bar.
 - A library on the right lists translated, in-progress and interrupted videos; click to watch again, delete the cache if you like. The last playback position is remembered so you can pick up where you left off.
+- Search and tags in the library: search titles (original and translated) and tags; add tags to any video (the "+ Tag" button on the item, press Enter to add), then click tags in the bar above the list to filter. Multiple tags can be selected (a video must have all of them), and filtering combines with search.
 - Subtitle check: merges duplicates, fixes timing, and fills in blank translations (runs once automatically after translation, and can be re-run from the button next to each library item).
-- Light (RX-78-2 Gundam) and dark (Evangelion Unit-01) themes, and Traditional Chinese / English interface. Both are three-state buttons: auto (follow the system, the default) → manual choices.
+- Light and dark themes, and Traditional Chinese / English interface. Both are three-state buttons: auto (follow the system, the default) → manual choices.
 
 ## How it works
 
@@ -81,7 +82,7 @@ Contents:
 | Item | Description |
 | --- | --- |
 | `.env` | Settings and the API key |
-| `cache/<video_id>/` | Per-video cache: `subs.json` (raw subtitles), `translated.json` (final result), `trans_partial.json` (translation checkpoint, removed when finished), `progress.json` (playback position), `audio.*` (audio, when there were no captions), `translated.pre-check.json` (backup taken before a manual check) |
+| `cache/<video_id>/` | Per-video cache: `subs.json` (raw subtitles), `translated.json` (final result), `trans_partial.json` (translation checkpoint, removed when finished), `progress.json` (playback position), `tags.json` (tags; up to 10, 20 characters each), `audio.*` (audio, when there were no captions), `translated.pre-check.json` (backup taken before a manual check) |
 | `webview/` | The desktop app's browser data (theme and language settings, cookies); excluded by `.gitignore` |
 | `tubetran.log` | Output log when there is no console (for example when launched by double-click) |
 

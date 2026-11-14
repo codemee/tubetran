@@ -204,6 +204,50 @@ def _read_json(path) -> dict | None:
         return None
 
 
+# ── 標籤：存在每支影片自己的 cache/<id>/tags.json，刪除快取時一併清除 ──
+MAX_TAGS = 10
+MAX_TAG_LEN = 20
+
+
+def tags_path(video_id: str):
+    return config.CACHE_DIR / video_id / "tags.json"
+
+
+def normalize_tags(tags) -> list[str]:
+    """清理標籤：合併空白、截斷長度、忽略大小寫去重（保留第一次出現的寫法）、限制數量。"""
+    out, seen = [], set()
+    for raw in tags:
+        tag = re.sub(r"\s+", " ", str(raw)).strip()[:MAX_TAG_LEN].strip()
+        key = tag.casefold()
+        if tag and key not in seen:
+            seen.add(key)
+            out.append(tag)
+    return out[:MAX_TAGS]
+
+
+def load_tags(video_id: str) -> list[str]:
+    try:
+        d = json.loads(tags_path(video_id).read_text(encoding="utf-8"))
+        return normalize_tags(d if isinstance(d, list) else [])
+    except (OSError, ValueError):
+        return []
+
+
+def save_tags(video_id: str, tags) -> list[str] | None:
+    """儲存標籤並回傳清理後的結果。只有已有快取的影片才能加標籤（找不到時回傳 None），
+    避免替已刪除的影片重建資料夾。"""
+    if not VIDEO_ID_RE.fullmatch(video_id):
+        raise ValueError("不合法的影片 ID")
+    if not (result_path(video_id).exists() or subs_path(video_id).exists()):
+        return None
+    clean = normalize_tags(tags)
+    try:
+        _write_json(tags_path(video_id), clean)
+    except OSError:  # 與刪除同時發生時，資料夾可能剛好消失
+        return None
+    return clean
+
+
 def list_library() -> list[dict]:
     """列出快取中的影片。
 
@@ -229,6 +273,7 @@ def list_library() -> list[dict]:
             "duration": prog["duration"],
             "stage": "done",
             "progress": 1.0,
+            "tags": load_tags(vid),
         }
         f = result_path(vid)
         data = _read_json(f) if f.exists() else None

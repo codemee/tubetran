@@ -65,6 +65,21 @@ def delete_library_item(video_id: str):
     return {"deleted": video_id}
 
 
+class TagsReq(BaseModel):
+    tags: list[str] = Field(max_length=50)
+
+
+@app.put("/api/library/{video_id}/tags")
+def put_tags(video_id: str, req: TagsReq):
+    try:
+        tags = jobs.save_tags(video_id, req.tags)
+    except ValueError:
+        raise HTTPException(400, "不合法的影片 ID")
+    if tags is None:
+        raise HTTPException(404, "找不到這支影片")
+    return {"tags": tags}
+
+
 @app.post("/api/library/{video_id}/check")
 def check_library_item(video_id: str):
     try:
@@ -110,7 +125,7 @@ def get_subtitles(video_id: str):
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return FileResponse(
-        config.STATIC_DIR / "logo" / "tubetran-rx78-light-icon.svg", media_type="image/svg+xml"
+        config.STATIC_DIR / "logo" / "tubetran-light-icon.svg", media_type="image/svg+xml"
     )
 
 

@@ -155,3 +155,38 @@ def test_delete_rejects_bad_id_and_running_job(client, tmp_path):
     jobs._jobs["aaaaaaaaaaa"] = jobs.Job("aaaaaaaaaaa")  # running
     assert client.delete("/api/library/aaaaaaaaaaa").status_code == 409
     assert (tmp_path / "aaaaaaaaaaa").exists()
+
+
+def test_normalize_tags():
+    assert jobs.normalize_tags([" Python ", "python", "", "  ", "AI  工具", "x" * 50]) == ["Python", "AI 工具", "x" * jobs.MAX_TAG_LEN]
+    assert len(jobs.normalize_tags([str(i) for i in range(30)])) == jobs.MAX_TAGS
+
+
+def test_tags_save_list_and_cleanup(client, tmp_path):
+    vid = "aaaaaaaaaaa"
+    # 沒有快取的影片：404，且不會替它建立資料夾
+    assert client.put(f"/api/library/{vid}/tags", json={"tags": ["a"]}).status_code == 404
+    assert not (tmp_path / vid).exists()
+    assert client.put("/api/library/bad!/tags", json={"tags": ["a"]}).status_code in (400, 404)
+
+    _make(tmp_path, vid, "x", 1000)
+    assert client.get("/api/library").json()[0]["tags"] == []
+    res = client.put(f"/api/library/{vid}/tags", json={"tags": [" 教學 ", "教學", "Python"]})
+    assert res.json() == {"tags": ["教學", "Python"]}
+    assert client.get("/api/library").json()[0]["tags"] == ["教學", "Python"]
+
+    # 清空標籤
+    assert client.put(f"/api/library/{vid}/tags", json={"tags": []}).json() == {"tags": []}
+    assert client.get("/api/library").json()[0]["tags"] == []
+
+    # 刪除影片時標籤一起清除
+    client.put(f"/api/library/{vid}/tags", json={"tags": ["a"]})
+    assert client.delete(f"/api/library/{vid}").status_code == 200
+    assert not (tmp_path / vid).exists()
+
+
+def test_tags_file_corrupt_is_ignored(client, tmp_path):
+    vid = "aaaaaaaaaaa"
+    _make(tmp_path, vid, "x", 1000)
+    (tmp_path / vid / "tags.json").write_text("{not json", encoding="utf-8")
+    assert client.get("/api/library").json()[0]["tags"] == []

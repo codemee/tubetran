@@ -1,14 +1,6 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 816 256" width="816" height="256" role="img"><title>TubeTran</title><rect x="22" y="54" width="196" height="150" rx="32" fill="#FFFFFF" stroke="#1646A0" stroke-width="12"/>
-<path d="M34 158H206V172Q206 192 186 192H54Q34 192 34 172Z" fill="#1646A0"/>
-<path d="M104 88Q98 84 98 92V143Q98 151 105 147L150 122Q157 118 150 114Z" fill="#D92332"/>
-<path d="M52 170H133M52 182H103" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
-<path d="M79 34Q141 4 196 43" fill="none" stroke="#D92332" stroke-width="10" stroke-linecap="round"/><path d="M184 20L207 48L171 47Z" fill="#D92332"/>
-<path d="M177 226Q117 250 61 218" fill="none" stroke="#1646A0" stroke-width="10" stroke-linecap="round"/><path d="M72 241L47 211L86 211Z" fill="#1646A0"/>
-<path d="M17 18H70Q92 18 92 40V65Q92 87 70 87H43L23 103V87H17Q5 87 5 65V40Q5 18 17 18Z" fill="#1646A0" stroke="#FFFFFF" stroke-width="5" stroke-linejoin="round"/>
-<path d="M28 66L47 32L65 66M35 54H58" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M185 150H229Q251 150 251 172V199Q251 221 229 221H211L190 238V221H185Q163 221 163 199V172Q163 150 185 150Z" fill="#FFC928" stroke="#1646A0" stroke-width="7" stroke-linejoin="round"/>
-<path d="M184 174H230M207 162V173M192 175Q197 196 229 209M222 175Q216 196 184 209" fill="none" stroke="#1646A0" stroke-width="6" stroke-linecap="round"/><path fill="#1646A0" transform="translate(278.000 166) scale(0.108 -0.108)" d="M238 0H386V617H595V741H30V617H238Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 816 256" width="816" height="256" role="img"><title>TubeTran</title><path d="M60 22H196Q236 22 236 62V150Q236 190 196 190H116L88 232V190H60Q20 190 20 150V62Q20 22 60 22Z" fill="#FFC928" stroke="#1646A0" stroke-width="14" stroke-linejoin="round"/><path d="M56 92H200" fill="none" stroke="#1646A0" stroke-width="14" stroke-linecap="round"/><path d="M84 120H172" fill="none" stroke="#D92332" stroke-width="14" stroke-linecap="round"/>
+<path fill="#1646A0" transform="translate(278.000 166) scale(0.108 -0.108)" d="M238 0H386V617H595V741H30V617H238Z"/>
 <path fill="#1646A0" transform="translate(345.500 166) scale(0.108 -0.108)" d="M246 -14C323 -14 376 24 424 81H428L439 0H559V560H412V182C374 132 344 112 299 112C244 112 219 142 219 229V560H73V211C73 70 125 -14 246 -14Z"/>
 <path fill="#1646A0" transform="translate(414.296 166) scale(0.108 -0.108)" d="M360 -14C483 -14 598 97 598 290C598 461 515 574 377 574C322 574 266 547 221 507L226 597V798H79V0H194L206 59H211C256 12 310 -14 360 -14ZM328 107C297 107 260 118 226 149V396C264 434 298 453 336 453C413 453 447 394 447 287C447 165 394 107 328 107Z"/>
 <path fill="#1646A0" transform="translate(483.848 166) scale(0.108 -0.108)" d="M323 -14C392 -14 463 10 518 48L468 138C427 113 388 100 343 100C259 100 199 147 187 238H532C536 252 539 279 539 306C539 462 459 574 305 574C172 574 44 461 44 280C44 95 166 -14 323 -14ZM184 337C196 418 248 460 307 460C380 460 413 412 413 337Z"/>
