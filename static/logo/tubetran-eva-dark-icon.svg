@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img"><title>TubeTran icon</title><rect x="22" y="54" width="196" height="150" rx="32" fill="#241B35" stroke="#A16BFA" stroke-width="12"/>
+<path d="M34 158H206V172Q206 192 186 192H54Q34 192 34 172Z" fill="#6840A7"/>
+<path d="M104 88Q98 84 98 92V143Q98 151 105 147L150 122Q157 118 150 114Z" fill="#A8F044"/>
+<path d="M52 170H133M52 182H103" stroke="#F5F2FA" stroke-width="6" stroke-linecap="round"/>
+<path d="M79 34Q141 4 196 43" fill="none" stroke="#A8F044" stroke-width="10" stroke-linecap="round"/><path d="M184 20L207 48L171 47Z" fill="#A8F044"/>
+<path d="M177 226Q117 250 61 218" fill="none" stroke="#A8F044" stroke-width="10" stroke-linecap="round"/><path d="M72 241L47 211L86 211Z" fill="#A8F044"/>
+<path d="M17 18H70Q92 18 92 40V65Q92 87 70 87H43L23 103V87H17Q5 87 5 65V40Q5 18 17 18Z" fill="#7443C5" stroke="#FF9235" stroke-width="5" stroke-linejoin="round"/>
+<path d="M28 66L47 32L65 66M35 54H58" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M185 150H229Q251 150 251 172V199Q251 221 229 221H211L190 238V221H185Q163 221 163 199V172Q163 150 185 150Z" fill="#A8F044" stroke="#7443C5" stroke-width="7" stroke-linejoin="round"/>
+<path d="M184 174H230M207 162V173M192 175Q197 196 229 209M222 175Q216 196 184 209" fill="none" stroke="#171322" stroke-width="6" stroke-linecap="round"/></svg>

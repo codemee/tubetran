@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>水管譯工</title>
+  <link id="favicon" rel="icon" href="/static/logo/tubetran-rx78-light-icon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#1646a0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1a1030" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    // 載入前先套用主題與語系，避免閃爍。
+    // 主題／語系只有明確選了才記錄；沒有記錄（預設）就跟隨系統。
+    (function () {
+      var d = document.documentElement, theme = "auto", lang = "auto";
+      try {
+        var t = localStorage.getItem("theme"); if (t === "light" || t === "dark") theme = t;
+        var l = localStorage.getItem("lang"); if (l === "zh-TW" || l === "en") lang = l;
+      } catch (_) {}
+      if (theme !== "auto") d.dataset.theme = theme;
+      var eff = lang !== "auto" ? lang : (/^zh/i.test(navigator.language || "") ? "zh-TW" : "en");
+      d.lang = eff === "en" ? "en" : "zh-Hant";
+      d.dataset.lang = eff === "en" ? "en" : "zh";
+      document.title = eff === "en" ? "TubeTran" : "水管譯工";
+      var dark = theme === "dark" || (theme === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.getElementById("favicon").href =
+        "/static/logo/" + (dark ? "tubetran-eva-dark-icon.svg" : "tubetran-rx78-light-icon.svg");
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <!-- 標誌：淺色＝RX-78-2、深色＝EVA 初號機；中文／英文各一版，由 CSS 依主題與語系只顯示其中一個 -->
+    <div class="brand">
+      <img class="brand-logo light zh" src="/static/logo/tubetran-rx78-light-zh-TW.svg" alt="水管譯工" data-i18n-attr="alt:brand_alt">
+      <img class="brand-logo light en" src="/static/logo/tubetran-rx78-light-en.svg" alt="水管譯工" data-i18n-attr="alt:brand_alt">
+      <img class="brand-logo dark zh" src="/static/logo/tubetran-eva-dark-zh-TW.svg" alt="水管譯工" data-i18n-attr="alt:brand_alt">
+      <img class="brand-logo dark en" src="/static/logo/tubetran-eva-dark-en.svg" alt="水管譯工" data-i18n-attr="alt:brand_alt">
+    </div>
+    <form id="form">
+      <input id="url" placeholder="貼上 YouTube 網址，按 Enter 載入" data-i18n-attr="placeholder:url_ph" required autocomplete="off">
+      <button class="btn primary" data-i18n="load">載入</button>
+    </form>
+    <!-- 三態按鈕：每按一下切換到下一個狀態（自動 → 第二個 → 第三個 → 自動）。
+         圖示全部是單色向量（currentColor），不使用有自己顏色的字元／emoji。 -->
+    <div class="hdr-ctrls">
+      <button id="lang-btn" class="btn icon ctrl-btn" type="button" data-state="auto">
+        <!-- 自動（跟隨系統語言）：地球 -->
+        <svg class="st" data-s="auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>
+        </svg>
+        <span class="st txt" data-s="zh-TW" aria-hidden="true">中</span>
+        <span class="st txt" data-s="en" aria-hidden="true">EN</span>
+      </button>
+      <button id="theme-btn" class="btn icon ctrl-btn" type="button" data-state="auto">
+        <!-- 自動（跟隨系統配色）：半填色、半不填色的圓 -->
+        <svg class="st" data-s="auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/>
+        </svg>
+        <!-- 淺色：太陽 -->
+        <svg class="st" data-s="light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/>
+        </svg>
+        <!-- 深色：月亮 -->
+        <svg class="st" data-s="dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20.5 14.2A8.5 8.5 0 1 1 9.8 3.5a6.8 6.8 0 0 0 10.7 10.7z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="col-main">
+      <div id="stage">
+        <div id="empty" data-i18n="empty">貼上 YouTube 網址，或從右側選一支已翻譯的影片</div>
+        <div id="player"></div>
+        <div id="overlay"></div>
+        <div id="busy" hidden><span class="spin" aria-hidden="true"></span><span id="busy-text"></span></div>
+        <button id="fs" type="button" title="全螢幕 (F)" aria-label="全螢幕" data-i18n-attr="title:fs;aria-label:fs">⛶</button>
+      </div>
+
+      <!-- 影片標題：有譯名時譯名為主、原標題為輔（與右側影片清單一致） -->
+      <div id="vtitle" hidden>
+        <div class="vt-main"></div>
+        <div class="vt-orig" hidden></div>
+      </div>
+
+      <div id="progress" class="card" hidden aria-live="polite">
+        <ol class="steps">
+          <li data-step="subs" data-i18n="step_subs">取得字幕</li>
+          <li data-step="stt" data-i18n="step_stt" hidden>語音辨識</li>
+          <li data-step="trans" data-i18n="step_trans">翻譯</li>
+        </ol>
+        <div class="pbar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="pfill" class="fill"></div></div>
+        <div class="pline"><span id="plabel"></span><b id="ppct"></b></div>
+        <p id="phint" class="phint"></p>
+      </div>
+
+      <div id="status" role="status"></div>
+
+      <div id="bar" class="toolbar" hidden>
+        <div class="seg" role="radiogroup" aria-label="字幕顯示模式" data-i18n-attr="aria-label:mode_label">
+          <label><input type="radio" name="mode" value="both" checked><span data-i18n="mode_both">雙語</span></label>
+          <label><input type="radio" name="mode" value="orig"><span data-i18n="mode_orig">原文</span></label>
+          <label><input type="radio" name="mode" value="trans"><span data-i18n="mode_trans">譯文</span></label>
+        </div>
+        <label class="check"><input type="checkbox" id="hide-native" checked> <span data-i18n="hide_native">隱藏 YouTube 原字幕</span></label>
+        <span class="sp"></span>
+        <a id="dl-srt" class="btn" href="#" data-i18n="dl_srt">下載 SRT</a>
+        <a id="dl-vtt" class="btn" href="#" data-i18n="dl_vtt">下載 VTT</a>
+      </div>
+
+      <details id="transcript" class="card" hidden>
+        <summary><span id="transcript-title"></span></summary>
+        <div id="list"></div>
+      </details>
+    </section>
+
+    <aside class="col-side">
+      <div class="side-head">
+        <h2 data-i18n="side_title">已翻譯的影片</h2>
+        <span id="lib-count" class="badge"></span>
+      </div>
+      <div id="library"></div>
+    </aside>
+  </main>
+  <script src="/static/i18n.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
