@@ -52,18 +52,26 @@
 
 > 執行檔沒有數位簽章，Windows SmartScreen 可能會警告；選「其他資訊 → 仍要執行」。每個版本的 ZIP 由 GitHub Actions 自動建置，內容與 PyPI 上同一版本相同。
 
-### 用 `uv tool install` 安裝
+### 用 `uv tool install` 從 PyPI 安裝
 
 ```powershell
-uv tool install ".[desktop]"         # 在專案資料夾執行；只用伺服器模式的話可省略 [desktop]
-# 或直接從 GitHub：uv tool install "tubetran[desktop] @ git+https://github.com/codemee/tubetran.git"
+uv tool install --python 3.12 "tubetran[desktop]"   # 只用伺服器模式的話可省略 [desktop]
 
 tubetran --help                      # 查看所有參數
 tubetran --server                    # 伺服器模式：http://127.0.0.1:8000/
 tubetran                             # 桌面模式（需要 [desktop]）
 ```
 
-第一次執行時，在網頁右上角的[設定面板](#設定面板)輸入 Claude API 金鑰即可（沒有金鑰時會自動展開）；也可以改設同名的環境變數 `ANTHROPIC_API_KEY`。更新用 `uv tool upgrade tubetran`（從本機資料夾安裝的話，改完程式後用 `uv tool install --reinstall ".[desktop]"`），移除用 `uv tool uninstall tubetran`。
+> **一定要加 `--python 3.12`（或 `3.13`）。** `uv tool install` 預設使用電腦上找到的 Python；如果那是比較新的版本（例如 3.14 以上），語音辨識需要的 `onnxruntime` 還沒有對應的套件，會安裝失敗（`No solution found … onnxruntime … no wheels with a matching Python ABI tag`）。加上參數後，uv 會自動下載需要的 Python。
+
+從原始碼或 GitHub 安裝：
+
+```powershell
+uv tool install --python 3.12 ".[desktop]"           # 在專案資料夾執行
+uv tool install --python 3.12 "tubetran[desktop] @ git+https://github.com/codemee/tubetran.git"
+```
+
+第一次執行時，在網頁右上角的[設定面板](#設定面板)輸入 Claude API 金鑰即可（沒有金鑰時會自動展開）；也可以改設同名的環境變數 `ANTHROPIC_API_KEY`。更新用 `uv tool upgrade tubetran`（從本機資料夾安裝的話，改完程式後用 `uv tool install --python 3.12 --reinstall ".[desktop]"`），移除用 `uv tool uninstall tubetran`。
 
 ### 從原始碼執行（開發用）
 

@@ -320,7 +320,7 @@ def run_desktop(native_titlebar: bool = False) -> int:
         import webview
     except ImportError:
         print("桌面模式需要 pywebview。安裝時加上 desktop 額外套件：\n"
-              "  uv tool install \"tubetran[desktop]\"（從原始碼資料夾則是 uv tool install \".[desktop]\"）\n"
+              "  uv tool install --python 3.12 \"tubetran[desktop]\"（從原始碼資料夾則是 uv tool install --python 3.12 \".[desktop]\"）\n"
               "  或在專案內 uv sync --extra desktop\n"
               "只想用瀏覽器的話可改用：tubetran --server", file=sys.stderr)
         return 1

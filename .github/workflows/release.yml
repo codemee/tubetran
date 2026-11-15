@@ -171,9 +171,9 @@ jobs:
           ## 下載與安裝 / Download
 
           - **Windows 執行檔：** 下載 `TubeTran-*-windows-x64.zip`，解壓縮後執行 `TubeTran.exe`（桌面模式）。加上 `--server` 則是伺服器模式。第一次執行時在右上角設定面板輸入 Claude API 金鑰。程式沒有數位簽章，Windows SmartScreen 可能會警告。
-          - **Python 套件（PyPI）：** `uv tool install "tubetran[desktop]"`，之後執行 `tubetran`。
+          - **Python 套件（PyPI）：** `uv tool install --python 3.12 "tubetran[desktop]"`，之後執行 `tubetran`。要加 `--python 3.12`，否則在較新的 Python 上會因語音辨識套件尚無對應版本而安裝失敗。
           - **Windows executable:** download `TubeTran-*-windows-x64.zip`, extract it, and run `TubeTran.exe` (desktop mode); add `--server` for server mode. On first run, enter your Claude API key in the settings panel at the top right. The program is not code-signed, so Windows SmartScreen may warn.
-          - **Python package (PyPI):** `uv tool install "tubetran[desktop]"`, then run `tubetran`.
+          - **Python package (PyPI):** `uv tool install --python 3.12 "tubetran[desktop]"`, then run `tubetran`. Keep `--python 3.12`: on newer Pythons the install fails because the speech-recognition package has no matching wheels yet.
 
           ---
 

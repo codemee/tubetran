@@ -52,18 +52,26 @@ Download `TubeTran-vX.Y.Z-windows-x64.zip` from [Releases](https://github.com/co
 
 > The executable is not code-signed, so Windows SmartScreen may warn; choose "More info → Run anyway". Each version's ZIP is built automatically by GitHub Actions and contains the same code as that version on PyPI.
 
-### Install with `uv tool install`
+### Install from PyPI with `uv tool install`
 
 ```powershell
-uv tool install ".[desktop]"         # run in the project folder; drop [desktop] if you only need server mode
-# or straight from GitHub: uv tool install "tubetran[desktop] @ git+https://github.com/codemee/tubetran.git"
+uv tool install --python 3.12 "tubetran[desktop]"   # drop [desktop] if you only need server mode
 
 tubetran --help                      # list all options
 tubetran --server                    # server mode: http://127.0.0.1:8000/
 tubetran                             # desktop mode (needs [desktop])
 ```
 
-On the first run, enter your Claude API key in the [settings panel](#settings-panel) at the top right of the page (it opens automatically when no key is set); you can also set the `ANTHROPIC_API_KEY` environment variable instead. Upgrade with `uv tool upgrade tubetran` (if installed from a local folder, use `uv tool install --reinstall ".[desktop]"` after changing code); remove with `uv tool uninstall tubetran`.
+> **Always add `--python 3.12` (or `3.13`).** `uv tool install` uses whichever Python it finds on your machine by default; if that is a newer version (3.14 or later), `onnxruntime`, which speech recognition needs, has no matching wheels yet and the install fails (`No solution found … onnxruntime … no wheels with a matching Python ABI tag`). With the option, uv downloads the Python it needs.
+
+Install from source or from GitHub:
+
+```powershell
+uv tool install --python 3.12 ".[desktop]"           # run in the project folder
+uv tool install --python 3.12 "tubetran[desktop] @ git+https://github.com/codemee/tubetran.git"
+```
+
+On the first run, enter your Claude API key in the [settings panel](#settings-panel) at the top right of the page (it opens automatically when no key is set); you can also set the `ANTHROPIC_API_KEY` environment variable instead. Upgrade with `uv tool upgrade tubetran` (if installed from a local folder, use `uv tool install --python 3.12 --reinstall ".[desktop]"` after changing code); remove with `uv tool uninstall tubetran`.
 
 ### Run from source (development)
 
