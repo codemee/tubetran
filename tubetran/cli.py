@@ -14,10 +14,15 @@ import socket
 import sys
 import threading
 import time
+from pathlib import Path
 
-from tubetran import config
+from tubetran import config, winctl
 
 WINDOW_TITLE = "水管譯工"
+# 視窗的最小尺寸（邏輯像素）。要夠小：視窗管理程式（平鋪／貼齊）會直接指定位置與大小，
+# 比最小值小的要求會被擋住，結果是「位置對了、大小沒變」。窄到這個程度版面仍可用（頂欄換成兩列、內容單欄）。
+# 寬度 400：頂欄第一列要放得下圖示＋設定／語言／主題鈕＋視窗按鈕（約 362px），再窄就會換行、按鈕重疊。
+MIN_WINDOW_SIZE = (400, 240)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,6 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--host", default="127.0.0.1",
                    help="伺服器模式的監聽位址，預設 127.0.0.1（要讓區網其他裝置連線請用 0.0.0.0）")
     p.add_argument("--port", type=int, default=8000, help="伺服器模式的埠號，預設 8000")
+    p.add_argument("--native-titlebar", action="store_true",
+                   help="桌面模式使用系統標題列（預設在 Windows 上是無框視窗加自製視窗按鈕）")
     p.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)  # 檢查打包是否完整
     return p
 
@@ -79,7 +86,12 @@ def selftest() -> int:
         data_dir=str(config.DATA_DIR),
         static_index_found=(config.STATIC_DIR / "index.html").exists(),
     )
-    print(json.dumps(out, ensure_ascii=False, indent=2))
+    text = json.dumps(out, ensure_ascii=False, indent=2)
+    print(text)
+    # 視窗程式（打包後的 exe）沒有主控台時看不到輸出（例如 CI）；環境變數指定檔案時，同時寫一份到那裡
+    target = os.environ.get("TUBETRAN_SELFTEST_OUT")
+    if target:
+        Path(target).write_text(text, encoding="utf-8")
     return 1 if any(str(v).startswith("FAIL") for v in out.values()) else 0
 
 
@@ -144,15 +156,121 @@ class _DesktopApi:
     注意：pywebview 會掃描 js_api 物件的公開屬性，所以內部狀態一律用底線開頭。
     """
 
-    def __init__(self):
+    def __init__(self, custom_chrome: bool = False):
         self._window = None
         self._fullscreen = False
+        # custom_chrome：視窗沒有系統標題列與邊框，由網頁自己畫視窗按鈕、處理拖曳與邊緣縮放
+        self._custom = custom_chrome
+        self._maximized = False
+        self._normal_rect = None
+        self._resize = None
+        self._moving = False
 
     def set_fullscreen(self, on):
         on = bool(on)
         if self._window is not None and on != self._fullscreen:
             self._window.toggle_fullscreen()
             self._fullscreen = on
+            self._apply_resizable_frame()  # WinForms 重設邊框樣式時可能把我們加的 WS_THICKFRAME 洗掉
+
+    def _apply_resizable_frame(self):
+        """讓無框視窗仍具有 WS_THICKFRAME（但不畫出邊框）。視窗管理程式（FancyZones 等）靠它判斷
+        視窗能不能縮放；沒有的話只會移動位置、不改大小。"""
+        if not self._custom or self._window is None:
+            return
+        try:
+            hwnd = self._hwnd()
+            if hwnd:
+                winctl.install_resizable_frame(hwnd)
+        except Exception as e:  # noqa: BLE001 — 失敗只是少了「被排版程式縮放」的功能，不能讓程式掛掉
+            print(f"無法設定視窗的可調整大小樣式：{e}", file=sys.stderr)
+
+    def _on_shown(self):
+        self._apply_resizable_frame()
+
+    # ── 自製視窗按鈕（只有無框視窗才會用到）──
+    def _hwnd(self):
+        try:
+            return int(self._window.native.Handle.ToInt64())
+        except Exception:  # noqa: BLE001 — 取不到就用標題找
+            return winctl.find_window(WINDOW_TITLE)
+
+    def _sync_maximized(self):
+        """「最大化」有兩種：我們自己鋪滿工作區（記在旗標裡），以及系統的最大化（Win+↑、拖到螢幕上緣貼齊、
+        FancyZones 等，用 IsZoomed 查）。視窗若被外部改過範圍，旗標要放掉，否則按鈕會停在「還原」、縮放也被擋住。"""
+        if not self._custom:
+            return
+        hwnd = self._hwnd()
+        if not hwnd:
+            return
+        if winctl.is_zoomed(hwnd):
+            self._maximized = True
+        elif self._maximized and not winctl.same_rect(winctl.get_rect(hwnd), winctl.work_area(hwnd)):
+            self._maximized = False
+
+    def window_state(self):
+        self._sync_maximized()
+        return {"custom": self._custom, "maximized": self._maximized}
+
+    def window_minimize(self):
+        if self._custom and self._window is not None:
+            self._window.minimize()
+
+    def window_toggle_maximize(self):
+        """最大化／還原。最大化是鋪滿螢幕「工作區」（不蓋住工作列），由我們自己記住原本的範圍。"""
+        self._sync_maximized()
+        hwnd = self._hwnd() if self._custom else None
+        if hwnd:
+            if winctl.is_zoomed(hwnd):  # 系統最大化：用系統的還原（回到最大化之前的位置與大小）
+                winctl.restore(hwnd)
+                self._maximized = False
+            elif self._maximized:
+                if self._normal_rect:
+                    winctl.set_rect(hwnd, *self._normal_rect)
+                self._maximized = False
+            else:
+                self._normal_rect = winctl.get_rect(hwnd)
+                winctl.set_rect(hwnd, *winctl.work_area(hwnd))
+                self._maximized = True
+        return self.window_state()
+
+    def window_move_begin(self):
+        """頁首拖曳（由 pywebview 在頁面裡一步步搬動視窗）開始：廣播「視窗開始被移動」。
+        FancyZones 靠這個事件才會顯示區域、在放開時把視窗吸進去（Shift 拖曳）。"""
+        hwnd = self._hwnd() if self._custom and not self._maximized and not self._fullscreen else None
+        if hwnd and not self._moving:
+            self._moving = True
+            winctl.notify_move_size(hwnd, True)
+
+    def window_move_end(self):
+        """拖曳結束：廣播「視窗結束被移動」，FancyZones 此時才會把視窗吸進區域並套用區域的大小。"""
+        if self._moving:
+            self._moving = False
+            hwnd = self._hwnd()
+            if hwnd:
+                winctl.notify_move_size(hwnd, False)
+
+    def window_close(self):
+        if self._window is not None:
+            self._window.destroy()
+
+    # ── 邊緣縮放：頁面在 pointerdown 時 begin，移動時回報位移（實體像素），放開時 end ──
+    def resize_begin(self, edge, dpr=1.0):
+        self._sync_maximized()
+        hwnd = self._hwnd() if self._custom and not self._maximized else None
+        if hwnd and edge in winctl.EDGES:
+            self._resize = {"hwnd": hwnd, "rect": winctl.get_rect(hwnd), "dpr": max(0.5, min(float(dpr), 8.0)), "seq": 0}
+
+    def resize_to(self, edge, dx, dy, seq):
+        rs = self._resize
+        if not rs or edge not in winctl.EDGES or int(seq) <= rs["seq"]:  # 橋接的呼叫可能亂序，舊的直接丟掉
+            return
+        rs["seq"] = int(seq)
+        min_w, min_h = (int(v * rs["dpr"]) for v in MIN_WINDOW_SIZE)
+        winctl.set_rect(rs["hwnd"], *winctl.resized_rect(rs["rect"], edge, dx, dy, min_w, min_h))
+
+    def resize_end(self):
+        self._resize = None
 
 
 def _error_window(webview, message: str) -> int:
@@ -177,7 +295,27 @@ def _set_app_user_model_id() -> None:
             pass
 
 
-def run_desktop() -> int:
+def _enable_per_monitor_dpi(user32=None, shcore=None) -> bool:
+    """宣告成「每螢幕 DPI 感知（PerMonitorV2）」，必須在建立任何視窗之前呼叫。
+
+    pywebview 啟動時只會宣告成「系統 DPI 感知」（SetProcessDPIAware，只認主螢幕的縮放）。多螢幕、縮放比例不同
+    （例如 100%／125%／200%）時，系統會替這種視窗再做一次縮放，而每螢幕感知的視窗管理程式（PowerToys、
+    mvapp 等）是用實體像素指定位置與大小，兩邊疊加就算錯：位置對、大小不對。
+    先宣告成每螢幕感知，pywebview 之後的 SetProcessDPIAware 呼叫就會被忽略，視窗的位置與大小都是實體像素。
+    回傳是否設定成功（已經被設定過、或系統太舊，都回 False，不影響執行）。"""
+    if sys.platform != "win32" and user32 is None:
+        return False
+    try:
+        user32 = user32 or ctypes.windll.user32
+        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):  # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+            return True
+        shcore = shcore or ctypes.windll.shcore
+        return shcore.SetProcessDpiAwareness(2) == 0                    # PROCESS_PER_MONITOR_DPI_AWARE（Windows 8.1）
+    except (OSError, AttributeError):
+        return False
+
+
+def run_desktop(native_titlebar: bool = False) -> int:
     try:
         import webview
     except ImportError:
@@ -186,6 +324,7 @@ def run_desktop() -> int:
               "  或在專案內 uv sync --extra desktop\n"
               "只想用瀏覽器的話可改用：tubetran --server", file=sys.stderr)
         return 1
+    _enable_per_monitor_dpi()
     _set_app_user_model_id()
 
     # 沒有 API 金鑰也照常開啟：網頁會自動打開設定面板請使用者輸入
@@ -194,11 +333,17 @@ def run_desktop() -> int:
     if not backend.start():
         return _error_window(webview, f"後端啟動失敗，詳細原因請看記錄檔：\n{config.DATA_DIR / 'tubetran.log'}")
     try:
-        api = _DesktopApi()
+        # 無框視窗（自製標題列與視窗按鈕）目前只在 Windows 上做並測試過；其他系統維持系統標題列
+        custom = sys.platform == "win32" and not native_titlebar
+        api = _DesktopApi(custom_chrome=custom)
+        # easy_drag=False：預設的「頁面任何地方按住都能拖動視窗」會吃掉選取文字、拖曳進度條等操作，
+        # 改成只有 .pywebview-drag-region（頁首的空白處）能拖；DIRECT_TARGET_ONLY 讓裡面的輸入框與按鈕不觸發拖曳
+        webview.settings["DRAG_REGION_DIRECT_TARGET_ONLY"] = True
         api._window = webview.create_window(
             WINDOW_TITLE, f"http://127.0.0.1:{port}/", width=1280, height=860,
-            min_size=(900, 600), js_api=api,
+            min_size=MIN_WINDOW_SIZE, js_api=api, frameless=custom, easy_drag=False,
         )
+        api._window.events.shown += api._on_shown
         # private_mode=False + storage_path：保留 localStorage（主題、語言設定）與 cookie
         # icon：視窗標題列／工作列的圖示。沒指定時 Windows 會用 python.exe 的圖示（開發模式）
         webview.start(
@@ -220,4 +365,4 @@ def main(argv: list[str] | None = None) -> int:
         return selftest()
     if args.server:
         return run_server(args.host, args.port)
-    return run_desktop()
+    return run_desktop(native_titlebar=args.native_titlebar)

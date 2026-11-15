@@ -68,16 +68,21 @@
 }
 
 * { box-sizing: border-box; }
+/* 視窗本身不捲動：頂欄固定，只有頂欄下方的 .page-scroll 區域會出現捲軸。
+   （桌面版的視窗最外緣也因此不會是瀏覽器捲軸，縮放把手才抓得到。） */
+html, body { height: 100%; overflow: hidden; }
 html { scrollbar-color: var(--border) transparent; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif;
+  display: flex; flex-direction: column;
 }
+.page-scroll { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; }
 :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
 /* ── 頂欄 ── */
 .topbar {
-  position: sticky; top: 0; z-index: 10;
+  position: relative; flex: none; z-index: 10; /* 不隨頁面捲動；設定面板從這裡往下展開，要蓋在下方內容之上 */
   display: flex; align-items: center; gap: 14px;
   padding: 10px 20px; background: var(--surface);
 }
@@ -104,6 +109,38 @@ body {
 .ctrl-btn[data-state="en"] .st[data-s="en"] { display: block; }
 .ctrl-btn > svg.ico { width: 20px; height: 20px; }
 .ctrl-btn[aria-expanded="true"] { background: var(--surface-2); border-color: var(--primary); }
+
+/* ── 桌面版的無框視窗：自製視窗按鈕與邊緣縮放把手（desktop.js 啟用）── */
+.custom-chrome .topbar { padding-right: 0; }
+.custom-chrome .brand { align-self: stretch; padding: 0 4px; } /* 圖示周圍整塊都能拖曳視窗 */
+.custom-chrome .brand-logo { pointer-events: none; }
+#win-ctrls { display: flex; align-self: stretch; margin: -10px 0 -10px 6px; flex: none; }
+#win-ctrls[hidden] { display: none; }
+#win-ctrls button {
+  display: grid; place-items: center; width: 46px; padding: 0; border: 0; border-radius: 0;
+  background: transparent; color: var(--text); cursor: default; transition: background .12s;
+}
+#win-ctrls button svg { width: 12px; height: 12px; }
+#win-ctrls button:hover { background: color-mix(in srgb, var(--text) 13%, transparent); }
+#win-ctrls button:active { background: color-mix(in srgb, var(--text) 22%, transparent); }
+#win-ctrls #win-close:hover { background: #e81123; color: #fff; }
+#win-ctrls #win-close:active { background: #f1707a; color: #fff; }
+#win-ctrls button:focus-visible { outline-offset: -3px; }
+#win-max[data-state="max"] .i-restore, #win-max[data-state="restore"] .i-max { display: none; }
+/* 視窗右上角的圓角（Windows 11）會切到最右邊的按鈕，讓它的角跟著圓 */
+#win-ctrls #win-close { border-top-right-radius: 8px; }
+
+#resize-handles { position: fixed; inset: 0; z-index: 1000; pointer-events: none; }
+#resize-handles[hidden] { display: none; }
+#resize-handles i { position: absolute; pointer-events: auto; touch-action: none; }
+#resize-handles [data-edge="n"] { top: 0; left: 12px; right: 12px; height: 5px; cursor: ns-resize; }
+#resize-handles [data-edge="s"] { bottom: 0; left: 12px; right: 12px; height: 5px; cursor: ns-resize; }
+#resize-handles [data-edge="w"] { left: 0; top: 12px; bottom: 12px; width: 5px; cursor: ew-resize; }
+#resize-handles [data-edge="e"] { right: 0; top: 12px; bottom: 12px; width: 5px; cursor: ew-resize; }
+#resize-handles [data-edge="nw"] { top: 0; left: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+#resize-handles [data-edge="se"] { bottom: 0; right: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+#resize-handles [data-edge="ne"] { top: 0; right: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+#resize-handles [data-edge="sw"] { bottom: 0; left: 0; width: 12px; height: 12px; cursor: nesw-resize; }
 
 /* 設定面板：從設定鈕下方展開 */
 .hdr-ctrls { position: relative; }
@@ -290,7 +327,7 @@ body {
 /* ── 右側影片庫 ── */
 /* 影片清單區：做成獨立的面板（淺底＋細框），與左邊的播放區分開；不使用彩色分隔線 */
 .col-side {
-  position: sticky; top: calc(var(--topbar-h) + 12px); max-height: calc(100vh - var(--topbar-h) - 32px);
+  position: sticky; top: 12px; max-height: calc(100vh - var(--topbar-h) - 32px); /* 在 .page-scroll 內黏住 */
   display: flex; flex-direction: column; padding: 14px;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
 }
@@ -426,7 +463,11 @@ body {
   #library { max-height: 60vh; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); align-content: start; }
   .lib-empty { grid-column: 1 / -1; }
   .topbar { flex-wrap: wrap; }
-  #form { order: 3; flex-basis: 100%; max-width: none; } /* 窄螢幕：網址列換到第二行 */
+  /* 窄螢幕：網址列換到第二行。右緣要和下方內容區（播放區）的右緣對齊，左緣本來就是（頂欄左內距 14px = 內容區左內距）。
+     內容區右緣 = 視窗右緣 − 捲軸寬度 − 內距 14px；捲軸寬度由 app.js 量出來放在 --sbw（沒有捲軸就是 0）。
+     頂欄本身已有 14px 右內距；桌面版無框模式的頂欄右內距是 0（讓視窗按鈕貼齊邊緣），所以那邊要自己補上 14px。 */
+  #form { order: 3; flex-basis: 100%; max-width: none; margin-right: var(--sbw, 0px); }
+  .custom-chrome #form { margin-right: calc(14px + var(--sbw, 0px)); }
   .hdr-ctrls { margin-left: auto; }
   .topbar { padding: 10px 14px; }
 }

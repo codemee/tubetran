@@ -80,8 +80,10 @@ def test_data_dir_dev_is_project_root(monkeypatch):
     assert config.resolve_data_dir() == Path(config.__file__).resolve().parent.parent
 
 
-def test_missing_api_key_message_points_to_env_file(monkeypatch):
+def test_missing_api_key_message_points_to_settings(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(config, "USER_SETTINGS", {})
+    monkeypatch.setattr(config, "_LEGACY_ENV", {})
     with pytest.raises(RuntimeError) as e:
         config.get_api_key()
-    assert str(config.DATA_DIR / ".env") in str(e.value)
+    assert "ANTHROPIC_API_KEY" in str(e.value) and str(config.DATA_DIR / "settings.json") in str(e.value)

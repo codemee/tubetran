@@ -98,8 +98,28 @@
         </svg>
       </button>
     </div>
+    <!-- 視窗按鈕：桌面版（無框視窗）才會顯示，由 desktop.js 啟用。圖示一律單色（currentColor） -->
+    <div id="win-ctrls" hidden>
+      <button id="win-min" type="button" data-i18n-attr="title:win_min;aria-label:win_min">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M1.5 6h9"/></svg>
+      </button>
+      <button id="win-max" type="button" data-state="max">
+        <svg class="i-max" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><rect x="1.8" y="1.8" width="8.4" height="8.4" rx="1"/></svg>
+        <svg class="i-restore" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><rect x="1.8" y="3.8" width="6.4" height="6.4" rx="1"/><path d="M3.8 3.8V2.8a1 1 0 0 1 1-1h5.4a1 1 0 0 1 1 1v5.4a1 1 0 0 1-1 1H8.2"/></svg>
+      </button>
+      <button id="win-close" type="button" data-i18n-attr="title:win_close;aria-label:win_close">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8"/></svg>
+      </button>
+    </div>
   </header>
+  <!-- 視窗邊緣的縮放把手（無框視窗沒有系統邊框）：桌面版才啟用，最大化時隱藏 -->
+  <div id="resize-handles" hidden aria-hidden="true">
+    <i data-edge="n"></i><i data-edge="s"></i><i data-edge="e"></i><i data-edge="w"></i>
+    <i data-edge="ne"></i><i data-edge="nw"></i><i data-edge="se"></i><i data-edge="sw"></i>
+  </div>
 
+  <!-- 頂欄以下才是可捲動的區域（視窗本身不捲動） -->
+  <div class="page-scroll">
   <main class="layout">
     <section class="col-main">
       <div id="stage">
@@ -158,8 +178,10 @@
       <datalist id="tag-suggest"></datalist>
     </aside>
   </main>
+  </div>
   <script src="/static/i18n.js"></script>
   <script src="/static/app.js"></script>
   <script src="/static/settings.js"></script>
+  <script src="/static/desktop.js"></script>
 </body>
 </html>

@@ -1,7 +1,8 @@
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -146,7 +147,7 @@ def put_settings(req: SettingsReq):
     except ValueError as e:
         raise HTTPException(400, str(e))
     except OSError:
-        raise HTTPException(500, "無法寫入設定檔（.env），請檢查資料資料夾的權限")
+        raise HTTPException(500, "無法寫入設定檔（settings.json），請檢查資料資料夾的權限")
 
 
 @app.get("/api/models")
@@ -155,16 +156,48 @@ def get_models():
     return {"translate": settings.translate_models(), "whisper": settings.whisper_models()}
 
 
+# 前端檔案每次都要向伺服器確認有沒有更新（沒變就回 304，很便宜）。
+# 沒有這個標頭時，瀏覽器會依「檔案多久沒改」自行猜一段可以不重新確認的時間；桌面版的 WebView
+# 又把快取存在資料資料夾，升級之後可能一直用舊的 JS／CSS，和新的後端對不上。
+NO_CACHE = {"Cache-Control": "no-cache"}
+
+
+class _NoCacheStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return FileResponse(
-        config.STATIC_DIR / "logo" / "tubetran-light-icon.svg", media_type="image/svg+xml"
+        config.STATIC_DIR / "logo" / "tubetran-light-icon.svg", media_type="image/svg+xml", headers=NO_CACHE
     )
+
+
+def asset_version() -> str:
+    """前端檔案的內容版本：任何一個檔案的大小或修改時間變了，它就會變。每次請求重算（約十個檔案，很便宜），
+    所以開發時改了檔案、重新整理就生效，升級後也一定是新網址。"""
+    import hashlib
+
+    h = hashlib.sha1()
+    for p in sorted(config.STATIC_DIR.rglob("*")):
+        if p.is_file() and p.suffix in (".js", ".css", ".html"):
+            st = p.stat()
+            h.update(f"{p.relative_to(config.STATIC_DIR)}:{st.st_size}:{st.st_mtime_ns}".encode())
+    return h.hexdigest()[:10]
+
+
+_ASSET_URL = re.compile(r'((?:src|href)="/static/[^"?]+\.(?:js|css))"')
 
 
 @app.get("/")
 def index():
-    return FileResponse(config.STATIC_DIR / "index.html")
+    """首頁：腳本與樣式表的網址帶上內容版本（?v=…），舊的快取就用不上，一定拿到新檔。"""
+    html = (config.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    html = _ASSET_URL.sub(rf'\1?v={asset_version()}"', html)
+    return HTMLResponse(html, headers=NO_CACHE)
 
 
-app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
+app.mount("/static", _NoCacheStaticFiles(directory=config.STATIC_DIR), name="static")

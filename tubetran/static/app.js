@@ -21,6 +21,17 @@ const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(
 const viaLabel = (v) => ({ manual: t("via_manual"), auto: t("via_auto"), whisper: t("via_whisper") }[v] || "");
 const stageLabel = (s) => (I18N["zh-TW"]["stage_" + s] ? t("stage_" + s) : s);
 
+// ── 捲軸寬度 ──
+// 捲動區出現捲軸時，內容區會變窄；窄螢幕時頂欄的網址列要和內容區（播放區）的右緣對齊，所以把捲軸寬度量出來
+// 放在 CSS 變數 --sbw（沒有捲軸或是覆蓋式捲軸就是 0）。內容區的寬度會隨捲軸出現／消失而變，ResizeObserver 會通知。
+{
+  const ps = document.querySelector(".page-scroll");
+  const syncScrollbarWidth = () =>
+    document.documentElement.style.setProperty("--sbw", `${ps.offsetWidth - ps.clientWidth}px`);
+  syncScrollbarWidth();
+  if (window.ResizeObserver) new ResizeObserver(syncScrollbarWidth).observe(ps);
+}
+
 // ── 主題 ──
 // 三種模式：auto（預設，跟隨系統）／light／dark。auto 時不設定 data-theme，交給 CSS 的 prefers-color-scheme
 const root = document.documentElement;
@@ -71,6 +82,7 @@ function onLangChange() {
   renderLibrary();
   if (lastJob && !$("progress").hidden) showProgress(lastJob);
   window.repaintSettings?.();
+  window.repaintDesktop?.();
 }
 // 三態按鈕：自動（跟隨系統語言）→ 繁體中文 → English → 自動
 $("lang-btn").addEventListener("click", () => {

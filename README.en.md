@@ -1,4 +1,4 @@
-**English** | [繁體中文](README.md)
+**English** | [繁體中文](https://github.com/codemee/tubetran/blob/main/README.md)
 
 # TubeTran (水管譯工)
 
@@ -31,10 +31,12 @@ Results are cached in `cache/<video_id>/` inside the data folder, so the same vi
 | | Desktop mode (default) | Server mode (`--server`) |
 | --- | --- | --- |
 | Start | `python -m tubetran` or `TubeTran.exe` | `python -m tubetran --server` or `TubeTran.exe --server` |
-| UI | A standalone window (uses the system's WebView2) | No window; open http://127.0.0.1:8000/ in a browser |
+| UI | A standalone frameless window (uses the system's WebView2); on Windows there is no system title bar and the window buttons are drawn at the top right of the header (see below) | No window; open http://127.0.0.1:8000/ in a browser |
 | Port | Fixed `47321` (a random port if it is taken); local connections only | `8000` by default; change with `--host` and `--port` |
 | Extra requirements | The `desktop` extra (pywebview); WebView2 on Windows | None |
 | Quit | Close the window | `Ctrl+C` |
+
+**The desktop window (Windows):** there is no system title bar or frame; the header has its own minimize, maximize/restore and close buttons at the top right. Drag an empty part of the header, or the icon at the top left, to move the window; double-click to maximize/restore (maximizing fills the screen's work area and does not cover the taskbar); drag any edge or corner to resize. If you don't want this look, add `--native-titlebar` to use the system title bar instead. Other operating systems always use the system title bar for now (the frameless window has only been implemented and tested on Windows).
 
 Both modes share the same backend and frontend. In desktop mode the backend is a thread inside the same process, so closing the window ends the process and leaves no orphaned processes behind.
 
@@ -44,7 +46,13 @@ Both modes share the same backend and frontend. In desktop mode the backend is a
 
 Requires [uv](https://docs.astral.sh/uv/). Python is limited to 3.12–3.13 (newer versions may lack prebuilt wheels for some dependencies). Developed and tested mainly on Windows 11.
 
-### Install with `uv tool install` (recommended)
+### Download the Windows executable (easiest)
+
+Download `TubeTran-vX.Y.Z-windows-x64.zip` from [Releases](https://github.com/codemee/tubetran/releases), extract it, and run `TubeTran.exe` (desktop mode; add `--server` for server mode). You don't need to install Python. On the first run, enter your Claude API key in the settings panel at the top right.
+
+> The executable is not code-signed, so Windows SmartScreen may warn; choose "More info → Run anyway". Each version's ZIP is built automatically by GitHub Actions and contains the same code as that version on PyPI.
+
+### Install with `uv tool install`
 
 ```powershell
 uv tool install ".[desktop]"         # run in the project folder; drop [desktop] if you only need server mode
@@ -55,13 +63,14 @@ tubetran --server                    # server mode: http://127.0.0.1:8000/
 tubetran                             # desktop mode (needs [desktop])
 ```
 
-Before the first run, create a `.env` in the [data folder](#data-folder) and set `ANTHROPIC_API_KEY` (see `.env.example` for the contents); an environment variable of the same name also works. Upgrade with `uv tool upgrade tubetran` (if installed from a local folder, use `uv tool install --reinstall ".[desktop]"` after changing code); remove with `uv tool uninstall tubetran`.
+On the first run, enter your Claude API key in the [settings panel](#settings-panel) at the top right of the page (it opens automatically when no key is set); you can also set the `ANTHROPIC_API_KEY` environment variable instead. Upgrade with `uv tool upgrade tubetran` (if installed from a local folder, use `uv tool install --reinstall ".[desktop]"` after changing code); remove with `uv tool uninstall tubetran`.
 
 ### Run from source (development)
 
 ```powershell
 uv sync --extra desktop              # needed for desktop mode; server mode only needs plain `uv sync`
-Copy-Item .env.example .env          # then edit .env and set ANTHROPIC_API_KEY
+
+# After starting, enter the API key in the page's settings panel; the ANTHROPIC_API_KEY environment variable works too
 
 uv run python -m tubetran                 # desktop mode
 uv run python -m tubetran --server        # server mode: http://127.0.0.1:8000/
@@ -81,11 +90,15 @@ The settings button at the top right (left of the language button) opens a panel
 - **Translation model:** the options are the models this key can actually use, queried from Anthropic (a valid key is required).
 - **Speech-to-text (STT) model:** the options are the models officially supported by faster-whisper (from its `available_models()`); only used when a video has no captions.
 
-Pressing "Save" writes to the `.env` in the data folder and takes effect immediately for jobs started afterwards — no restart needed.
+Pressing "Save" writes to `settings.json` in the data folder and takes effect immediately for jobs started afterwards — no restart needed.
 
-> **Priority:** operating-system environment variables **take priority over** `.env`. If `ANTHROPIC_API_KEY`, `TRANSLATE_MODEL` or `WHISPER_MODEL` is already set as an environment variable before startup, the panel locks that field and says where it comes from (changing it in the panel would have no effect). To change it, edit the environment variable, or remove it and then use the panel.
+> **The key is stored in plain text.** `settings.json` contains your API key, unencrypted and without using the system credential store; on macOS/Linux its file permissions are restricted to your user. Don't share or upload the data folder anywhere. When running from source the data folder is the project root, and `settings.json` is excluded by `.gitignore`.
 
-### `.env`
+> **Priority (high → low):** ① operating-system environment variables ② `settings.json` saved by the settings panel ③ the legacy `.env` (read-only; the program no longer writes it, kept for compatibility) ④ built-in defaults. If `ANTHROPIC_API_KEY`, `TRANSLATE_MODEL` or `WHISPER_MODEL` is already set as an environment variable before startup, the panel locks that field and says where it comes from (changing it in the panel would have no effect). To change it, edit the environment variable, or remove it and then use the panel.
+
+### Environment variables
+
+These can be set as environment variables (or in the legacy `.env`); for the key and the two models, the settings panel is the usual way.
 
 | Variable | Description | Default |
 | --- | --- | --- |
@@ -98,7 +111,7 @@ faster-whisper uses the GPU automatically when CUDA is available; the model is d
 
 ### Data folder
 
-`.env`, the cache and the desktop app's settings all live in the "data folder", located by (in order):
+`settings.json`, the cache and the desktop app's settings all live in the "data folder", located by (in order):
 
 1. The `TUBETRAN_DATA_DIR` environment variable, if set
 2. Development (running from the source folder): the project root
@@ -108,7 +121,8 @@ Contents:
 
 | Item | Description |
 | --- | --- |
-| `.env` | Settings and the API key |
+| `settings.json` | Settings saved by the settings panel: API key (plain text), translation model, STT model |
+| `.env` | (Optional, legacy) read-only; if present, the lowest-priority source of settings |
 | `cache/<video_id>/` | Per-video cache: `subs.json` (raw subtitles), `translated.json` (final result), `trans_partial.json` (translation checkpoint, removed when finished), `progress.json` (playback position), `tags.json` (tags; up to 10, 20 characters each), `audio.*` (audio, when there were no captions), `translated.pre-check.json` (backup taken before a manual check) |
 | `webview/` | The desktop app's browser data (theme and language settings, cookies); excluded by `.gitignore` |
 | `tubetran.log` | Output log when there is no console (for example when launched by double-click) |
@@ -131,11 +145,13 @@ The packaged program runs in desktop mode by default, and `--server` switches to
 ```
 tubetran/
   cli.py            Command-line entry: desktop mode / --server
+  winctl.py         Maximize and edge-resize for the frameless desktop window (Windows)
   config.py         Settings and the data folder
+  settings.py       Settings panel storage, key masking, model lists
   main.py           FastAPI routes and static files
   jobs.py           Background jobs, cache, library, playback progress
   services/         subtitles, transcribe (Whisper), translate, review (check), export (SRT/VTT)
-  static/           Frontend (no build step): index.html, app.js, i18n.js, style.css, logo/
+  static/           Frontend (no build step): index.html, app.js, settings.js, desktop.js, i18n.js, style.css, logo/
 packaging/          PyInstaller configuration and launcher (launch.py)
 tests/              pytest
 ```
@@ -149,6 +165,23 @@ uv run pytest
 
 On Windows, when you stop a `--reload` server, end its child processes too (`taskkill /PID <pid> /T /F`); otherwise a stale process can keep holding the port, and your code changes appear not to take effect.
 
+### Releasing a new version
+
+Releasing is fully automatic: after you push a `v*` tag, [GitHub Actions](https://github.com/codemee/tubetran/blob/main/.github/workflows/release.yml) runs the tests, builds the Python package and **publishes it to PyPI**, packages `TubeTran.exe` on Windows and compresses it into a **ZIP**, then creates a GitHub Release with those files attached.
+
+```powershell
+# 1. Change `version` in pyproject.toml, update the lock file and commit
+uv lock
+git commit -am "Version 0.2.0"
+# 2. Tag it with "v" + the same version and push (the workflow stops if the tag and the version differ)
+git tag v0.2.0
+git push origin main v0.2.0
+```
+
+**Dry run:** on GitHub go to Actions → Release → Run workflow; it only tests and builds, and publishes nothing.
+
+**PyPI needs a one-time setup:** at [pypi.org/manage/account/publishing](https://pypi.org/manage/account/publishing/) add a "pending publisher" with PyPI Project name `tubetran`, Owner `codemee`, Repository name `tubetran`, Workflow name `release.yml` and Environment name `pypi` (trusted publishing — no secret to store). Alternatively set a `PYPI_API_TOKEN` secret under GitHub Settings → Secrets. A PyPI version number can't be reused once published, so do a dry run first.
+
 ## Notes
 
 - The interface language only affects on-screen text; subtitles and titles are always translated into Traditional Chinese.
@@ -157,3 +190,7 @@ On Windows, when you stop a `--reload` server, end its child processes too (`tas
 - Translation calls the Claude API and costs money; the cache avoids paying twice, but reprocessing or deleting the cache and watching again translates it again.
 - YouTube changes often; if downloads fail, update with `uv lock --upgrade-package yt-dlp && uv sync`. `yt-dlp` may warn that no JavaScript runtime (`deno`) was found; this currently does not affect caption or audio downloads, and if downloads do fail you can install it (`scoop install deno`).
 - For personal use only. Respect YouTube's Terms of Service and video copyright.
+
+## License
+
+This project is released under the [GNU General Public License, version 3 or (at your option) any later version (GPL-3.0-or-later)](https://github.com/codemee/tubetran/blob/main/LICENSE). You may freely use, study, modify and distribute it, but when you distribute a modified version (including one packaged as an executable) you must make the source available under the GPL as well.

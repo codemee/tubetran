@@ -1,12 +1,11 @@
 """可在介面調整的設定：API 金鑰、翻譯模型、語音辨識（STT）模型。
 
-儲存在資料資料夾的 .env（與手動編輯同一份檔案），同時更新目前程序的環境變數與 config，
-所以改完立刻對「之後開始的任務」生效，不必重啟。
+儲存在資料資料夾的 settings.json，同時更新記憶體中的 config，
+所以改完立刻對「之後開始的任務」生效，不必重啟。優先順序見 config.py（環境變數 > settings.json > 舊式 .env）。
 """
+import json
+import os
 import re
-from pathlib import Path
-
-from dotenv import set_key
 
 from tubetran import config
 
@@ -39,7 +38,7 @@ def current() -> dict:
         "api_key": mask_key(key),
         "translate_model": config.TRANSLATE_MODEL,
         "whisper_model": config.WHISPER_MODEL,
-        # 由作業系統環境變數指定的項目：優先於 .env，介面只能顯示、不能改
+        # 由作業系統環境變數指定的項目：優先於 settings.json，介面只能顯示、不能改
         "locked": {
             "api_key": "ANTHROPIC_API_KEY" in config.ENV_LOCKED,
             "translate_model": "TRANSLATE_MODEL" in config.ENV_LOCKED,
@@ -60,18 +59,18 @@ def validate(api_key: str | None, translate_model: str | None, whisper_model: st
         raise ValueError("不支援的語音辨識模型")
 
 
-def _env_path() -> Path:
-    p = config.DATA_DIR / ".env"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.touch(exist_ok=True)
-    return p
-
-
-def _save(name: str, value: str) -> None:
-    set_key(str(_env_path()), name, value, quote_mode="never")
-    import os
-
-    os.environ[name] = value
+def _write_file(values: dict) -> None:
+    """整份寫入 settings.json：先寫暫存檔再取代，中途失敗也不會留下寫到一半的設定。
+    檔案內含 API 金鑰（明文），所以在支援的系統上限定只有本人可讀寫（0600）。"""
+    path = config.DATA_DIR / config.SETTINGS_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(values, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, path)
 
 
 def update(api_key: str | None, translate_model: str | None, whisper_model: str | None) -> dict:
@@ -86,14 +85,22 @@ def update(api_key: str | None, translate_model: str | None, whisper_model: str 
     if "WHISPER_MODEL" in locked and whisper_model is not None and whisper_model.strip() != config.WHISPER_MODEL:
         raise ValueError("語音辨識模型由環境變數 WHISPER_MODEL 指定，無法在介面修改")
 
+    # 以記憶體副本為底、再疊上磁碟內容：保留別處手動編輯過的欄位，也不會弄丟尚未寫進檔案的值
+    values = {**config.USER_SETTINGS, **config.read_settings_file()}
     if api_key is not None and api_key.strip():
-        _save("ANTHROPIC_API_KEY", api_key.strip())
+        values["api_key"] = api_key.strip()
     if translate_model is not None and "TRANSLATE_MODEL" not in locked:
-        config.TRANSLATE_MODEL = translate_model.strip()
-        _save("TRANSLATE_MODEL", config.TRANSLATE_MODEL)
+        values["translate_model"] = translate_model.strip()
     if whisper_model is not None and "WHISPER_MODEL" not in locked:
-        config.WHISPER_MODEL = whisper_model.strip()
-        _save("WHISPER_MODEL", config.WHISPER_MODEL)
+        values["whisper_model"] = whisper_model.strip()
+    _write_file(values)  # 寫入失敗（OSError）就不更新記憶體，狀態維持一致
+
+    config.USER_SETTINGS.clear()
+    config.USER_SETTINGS.update(values)
+    if "TRANSLATE_MODEL" not in locked and "translate_model" in values:
+        config.TRANSLATE_MODEL = values["translate_model"]
+    if "WHISPER_MODEL" not in locked and "whisper_model" in values:
+        config.WHISPER_MODEL = values["whisper_model"]
     return current()
 
 
