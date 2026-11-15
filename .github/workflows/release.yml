@@ -89,6 +89,44 @@ jobs:
           $p = Start-Process $exe -ArgumentList "--selftest" -Wait -PassThru
           if (Test-Path $out) { Get-Content $out -Raw }
           if ($p.ExitCode -ne 0) { throw "--selftest 失敗，結束碼 $($p.ExitCode)" }
+      - name: 下載情境測試（檔案帶「來自網際網路」標記時，桌面模式需要的 .NET 組件也要能載入）
+        shell: pwsh
+        run: |
+          # 從 GitHub 下載 ZIP 再解壓縮的檔案都帶這個標記，.NET Framework 會拒絕載入帶標記的組件。
+          # CI 內部直接建置的檔案沒有標記，所以必須自己加上去，否則測不到這類問題（0.1.1 就是這樣漏掉的）。
+          $src = (Resolve-Path packaging/dist/TubeTran).Path
+          $dst = Join-Path $env:RUNNER_TEMP "marked/TubeTran"
+          New-Item -ItemType Directory (Split-Path $dst) -Force | Out-Null
+          Copy-Item -Recurse $src $dst
+          $n = 0
+          Get-ChildItem $dst -Recurse -File | ForEach-Object {
+            Set-Content -LiteralPath $_.FullName -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3`r`nHostUrl=https://github.com/"
+            $n++
+          }
+          "已替 $n 個檔案加上網路來源標記"
+          $exe = Join-Path $dst "TubeTran.exe"
+          $env:TUBETRAN_DATA_DIR = Join-Path $env:RUNNER_TEMP "marked-data"
+          # 用 & 啟動（CreateProcess）：Start-Process 會觸發「開啟檔案 - 安全性警告」對話框而卡住；
+          # 接到管線讓 PowerShell 等視窗程式結束
+          # 注意：PowerShell 函式會把所有輸出都當成回傳值，所以說明文字用 Write-Host，只回傳結束碼
+          function Run-Selftest($label, $out) {
+            $env:TUBETRAN_SELFTEST_OUT = $out
+            Remove-Item $out -ErrorAction SilentlyContinue
+            & $exe --selftest | Out-Null
+            $code = [int]$LASTEXITCODE
+            Remove-Item Env:TUBETRAN_SELFTEST_OUT
+            Write-Host "$label：結束碼 $code"
+            if (Test-Path $out) { Get-Content $out -Raw | Select-String '"pythonnet_clr"|"unblocked_dlls"' | ForEach-Object { Write-Host ("  " + $_.Line.Trim()) } }
+            return $code
+          }
+          # 對照組：不清除標記，必須失敗。這證明這個測試真的抓得到問題，而不是永遠通過。
+          $env:TUBETRAN_NO_UNBLOCK = "1"
+          $control = Run-Selftest "對照組（不清除標記）" (Join-Path $env:RUNNER_TEMP "control.json")
+          Remove-Item Env:TUBETRAN_NO_UNBLOCK
+          if ($control -eq 0) { throw "對照組應該失敗卻成功了：這個測試抓不到『帶標記就無法載入 .NET 組件』的問題，請檢查測試方法" }
+          # 正式：程式啟動時會自己清除標記，必須成功
+          $real = Run-Selftest "正式（程式自動清除標記）" (Join-Path $env:RUNNER_TEMP "real.json")
+          if ($real -ne 0) { throw "帶網路來源標記的副本無法通過 --selftest（結束碼 $real）" }
       - name: 煙霧測試（以伺服器模式啟動，確認首頁與前端檔可以取得）
         shell: pwsh
         run: |
@@ -119,11 +157,17 @@ jobs:
           $zip = "TubeTran-v$v-windows-x64.zip"
           Compress-Archive -Path packaging/dist/TubeTran -DestinationPath $zip -CompressionLevel Optimal
           "{0}：{1:N0} MB" -f $zip, ((Get-Item $zip).Length / 1MB)
+          # SHA-256 校驗檔（格式同 sha256sum：「雜湊值  檔名」），下載後可以核對檔案沒有損壞或被改動
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  $zip" | Set-Content "$zip.sha256" -Encoding ascii
+          "SHA-256: $hash"
           "zip=$zip" >> $env:GITHUB_ENV
       - uses: actions/upload-artifact@v7
         with:
           name: windows-exe
-          path: ${{ env.zip }}
+          path: |
+            ${{ env.zip }}
+            ${{ env.zip }}.sha256
           if-no-files-found: error
 
   publish-pypi:

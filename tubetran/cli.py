@@ -67,9 +67,11 @@ def _setup_streams(cli_use: bool) -> None:
 def selftest() -> int:
     """列出各依賴能否載入，用來確認打包後的執行檔沒有漏東西。"""
     import importlib
-    import os
 
     out: dict = {}
+    # 和桌面模式啟動時做同樣的事：先清除網路來源標記，再載入 pythonnet。
+    # 這樣在「帶標記的副本」上執行 --selftest，就等於驗證桌面模式在下載來的 ZIP 上能不能啟動。
+    out["unblocked_dlls"] = _unblock_bundled_files()
     for name in ("fastapi", "uvicorn", "yt_dlp", "anthropic", "faster_whisper",
                  "ctranslate2", "av", "onnxruntime", "webview"):
         try:
@@ -82,6 +84,16 @@ def selftest() -> int:
         out["whisper_vad_assets"] = sorted(os.listdir(get_assets_path()))
     except Exception as e:  # noqa: BLE001
         out["whisper_vad_assets"] = f"FAIL: {type(e).__name__}: {e}"
+    if sys.platform == "win32":
+        # 只 import webview 看不出 .NET 載入有沒有問題：pywebview 要到開視窗時才載入 pythonnet。
+        # 這裡實際載入 pythonnet 與 WinForms 組件（桌面模式一開視窗就會做的事）。
+        try:
+            import clr  # pythonnet：載入 Python.Runtime.dll
+
+            clr.AddReference("System.Windows.Forms")
+            out["pythonnet_clr"] = "ok"
+        except Exception as e:  # noqa: BLE001
+            out["pythonnet_clr"] = f"FAIL: {type(e).__name__}: {e}"
     out.update(
         frozen=config.FROZEN,
         data_dir=str(config.DATA_DIR),
@@ -323,6 +335,8 @@ def _unblock_bundled_files(root: Path | None = None) -> int:
     pythonnet 載入 Python.Runtime.dll 就失敗（RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize），
     桌面視窗開不起來。所以在載入 pythonnet 之前先清掉。只在打包版需要；清不掉（唯讀資料夾等）就算了，
     之後的錯誤會由 _report_desktop_failure 說明解法。"""
+    if os.environ.get("TUBETRAN_NO_UNBLOCK"):
+        return 0  # 測試用：CI 靠它確認「帶標記的副本」真的會讓載入失敗（對照組），證明測試抓得到這個問題
     if root is None:
         if not config.FROZEN:
             return 0

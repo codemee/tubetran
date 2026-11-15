@@ -211,6 +211,28 @@ def test_unblock_clears_the_internet_zone_mark_from_bundled_dlls(tmp_path, monke
     assert cli._unblock_bundled_files(tmp_path) == 0                # 再跑一次：沒有東西可清，也不會出錯
 
 
+def test_no_unblock_switch_disables_clearing(tmp_path, monkeypatch):
+    """CI 的對照組：設了 TUBETRAN_NO_UNBLOCK 就不清標記（用來證明測試真的抓得到「帶標記就載入失敗」）。"""
+    monkeypatch.setenv("TUBETRAN_NO_UNBLOCK", "1")
+    assert cli._unblock_bundled_files(tmp_path) == 0
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="pythonnet 只在 Windows")
+def test_selftest_really_loads_pythonnet_and_fails_when_it_cannot(monkeypatch, capsys):
+    """只 import webview 看不出 .NET 載入有沒有問題（pythonnet 要到開視窗才載入），
+    所以 --selftest 要實際載入 pythonnet；載入失敗就必須回報失敗。"""
+    import types
+
+    fake = types.ModuleType("clr")
+    def boom(name):
+        raise RuntimeError("Failed to resolve Python.Runtime.Loader.Initialize")
+    fake.AddReference = boom
+    monkeypatch.setitem(sys.modules, "clr", fake)
+    assert cli.selftest() == 1
+    out = capsys.readouterr().out
+    assert '"pythonnet_clr": "FAIL: RuntimeError' in out and '"unblocked_dlls"' in out
+
+
 def test_desktop_failure_dialog_explains_how_to_unblock():
     text = cli._desktop_failure_text(RuntimeError("Failed to resolve Python.Runtime.Loader.Initialize"),
                                      r"C:\PortableApps\TubeTran", r"C:\x\tubetran.log")
