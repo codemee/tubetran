@@ -70,6 +70,7 @@ function onLangChange() {
   libKey = ""; // 強制重畫影片庫，讓文字換成新語系
   renderLibrary();
   if (lastJob && !$("progress").hidden) showProgress(lastJob);
+  window.repaintSettings?.();
 }
 // 三態按鈕：自動（跟隨系統語言）→ 繁體中文 → English → 自動
 $("lang-btn").addEventListener("click", () => {
@@ -364,6 +365,7 @@ async function openUrl(url) {
     loadLibrary();
   } catch (err) {
     if (my === runId) { hideProgress(); setStatus(() => serverMsg(err.message), true); }
+    if (/ANTHROPIC_API_KEY/.test(err.message)) window.openSettings?.(true); // 沒有金鑰：直接請使用者輸入
   }
 }
 

@@ -73,6 +73,18 @@ You do not need to install `ffmpeg` beforehand (speech recognition uses the deco
 
 ## Configuration
 
+### Settings panel
+
+The settings button at the top right (left of the language button) opens a panel where you can change:
+
+- **Claude API key:** only the first and last two characters are shown, with `*` in between; the full key is never sent back to the browser. To replace it, just paste a new one. The program starts fine without a key and opens the panel automatically so you can enter one.
+- **Translation model:** the options are the models this key can actually use, queried from Anthropic (a valid key is required).
+- **Speech-to-text (STT) model:** the options are the models officially supported by faster-whisper (from its `available_models()`); only used when a video has no captions.
+
+Pressing "Save" writes to the `.env` in the data folder and takes effect immediately for jobs started afterwards — no restart needed.
+
+> **Priority:** operating-system environment variables **take priority over** `.env`. If `ANTHROPIC_API_KEY`, `TRANSLATE_MODEL` or `WHISPER_MODEL` is already set as an environment variable before startup, the panel locks that field and says where it comes from (changing it in the panel would have no effect). To change it, edit the environment variable, or remove it and then use the panel.
+
 ### `.env`
 
 | Variable | Description | Default |

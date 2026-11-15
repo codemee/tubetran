@@ -5,13 +5,13 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from tubetran import config, jobs
+from tubetran import config, jobs, settings
 from tubetran.services import export, subtitles
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    config.get_api_key()  # 缺少 key 時啟動即報錯
+    # 沒有 API 金鑰也要能啟動：使用者可以在介面的設定面板輸入；真正需要時（/api/process）才檢查
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     yield
 
@@ -28,6 +28,11 @@ def process(req: ProcessReq):
     vid = subtitles.parse_video_id(req.url)
     if not vid:
         raise HTTPException(400, "無法從網址解析 YouTube 影片 ID")
+    if not jobs.load_result(vid):  # 已翻譯完成的影片只是重新播放，不需要金鑰
+        try:
+            config.get_api_key()  # 先檢查，免得下載、辨識做到一半才發現無法翻譯
+        except RuntimeError as e:
+            raise HTTPException(400, str(e))
     job = jobs.job_dict(jobs.start_job(vid))
     resume = jobs.resume_position(jobs.load_progress(vid))
     return {"video_id": vid, **job, "position": resume}
@@ -120,6 +125,34 @@ def get_subtitles(video_id: str):
     if not data:
         raise HTTPException(404, "字幕尚未準備好")
     return data
+
+
+class SettingsReq(BaseModel):
+    # 欄位為 null 表示不變；api_key 為空字串也表示不變（介面只會顯示遮罩後的金鑰，沒有重新輸入就不送）
+    api_key: str | None = Field(default=None, max_length=400)
+    translate_model: str | None = Field(default=None, max_length=100)
+    whisper_model: str | None = Field(default=None, max_length=100)
+
+
+@app.get("/api/settings")
+def get_settings():
+    return settings.current()
+
+
+@app.put("/api/settings")
+def put_settings(req: SettingsReq):
+    try:
+        return settings.update(req.api_key, req.translate_model, req.whisper_model)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except OSError:
+        raise HTTPException(500, "無法寫入設定檔（.env），請檢查資料資料夾的權限")
+
+
+@app.get("/api/models")
+def get_models():
+    """兩個下拉選單的選項：翻譯模型向 Anthropic 查詢（需要有效金鑰），STT 模型取自 faster-whisper。"""
+    return {"translate": settings.translate_models(), "whisper": settings.whisper_models()}
 
 
 @app.get("/favicon.ico", include_in_schema=False)

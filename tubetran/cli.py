@@ -188,11 +188,7 @@ def run_desktop() -> int:
         return 1
     _set_app_user_model_id()
 
-    try:
-        config.get_api_key()  # 沒有 API key 就直接在視窗裡說明，而不是讓使用者看到一片空白
-    except RuntimeError as e:
-        return _error_window(webview, str(e))
-
+    # 沒有 API 金鑰也照常開啟：網頁會自動打開設定面板請使用者輸入
     port = _pick_port()
     backend = _BackgroundServer(port)
     if not backend.start():

@@ -102,6 +102,35 @@ body {
 .ctrl-btn[data-state="dark"] .st[data-s="dark"],
 .ctrl-btn[data-state="zh-TW"] .st[data-s="zh-TW"],
 .ctrl-btn[data-state="en"] .st[data-s="en"] { display: block; }
+.ctrl-btn > svg.ico { width: 20px; height: 20px; }
+.ctrl-btn[aria-expanded="true"] { background: var(--surface-2); border-color: var(--primary); }
+
+/* 設定面板：從設定鈕下方展開 */
+.hdr-ctrls { position: relative; }
+#settings-panel {
+  position: absolute; top: calc(100% + 12px); right: 0; z-index: 30;
+  width: min(400px, calc(100vw - 28px)); padding: 16px 18px 18px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .28);
+}
+#settings-panel[hidden] { display: none; }
+#settings-panel h2 { margin: 0 0 12px; font-size: 16px; }
+.fld { display: grid; gap: 5px; margin-bottom: 14px; }
+.fld > span { font-size: 13.5px; font-weight: 600; }
+.fld input, .fld select {
+  width: 100%; height: 36px; padding: 0 10px; border-radius: 10px; font: inherit; font-size: 14px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+}
+.fld input { font-family: ui-monospace, Consolas, monospace; letter-spacing: .02em; }
+.fld input:focus-visible, .fld select:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; border-color: var(--primary); }
+.fld input:disabled, .fld select:disabled { opacity: .6; cursor: not-allowed; }
+.fld small { font-size: 12px; line-height: 1.45; color: var(--muted); }
+.fld small.warn { color: var(--danger); }
+.set-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+#set-msg { flex: 1; font-size: 12.5px; color: var(--muted); }
+#set-msg.err { color: var(--danger); }
+.set-actions .btn.primary { padding: 8px 22px; }
+.set-actions .btn:disabled { opacity: .5; cursor: not-allowed; }
+
 /* 網址輸入框與載入鈕：與圖示同風格——粗外框、大圓角；輸入框內留白，按鈕填色與外框不同色 */
 #form { flex: 1; display: flex; gap: 10px; max-width: 760px; margin: 0 auto; }
 /* 高度與圖示、右側按鈕一致（38px） */

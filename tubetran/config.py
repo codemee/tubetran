@@ -45,6 +45,11 @@ def resolve_data_dir() -> Path:
 
 
 DATA_DIR = resolve_data_dir()
+
+# 優先順序：作業系統的環境變數 > .env（load_dotenv 預設不覆蓋已存在的環境變數）。
+# 啟動時就已由環境變數指定的設定，介面不能改（改了寫進 .env 也不會生效），所以先記下來。
+SETTING_NAMES = ("ANTHROPIC_API_KEY", "TRANSLATE_MODEL", "WHISPER_MODEL")
+ENV_LOCKED = frozenset(n for n in SETTING_NAMES if os.environ.get(n, "").strip())
 load_dotenv(DATA_DIR / ".env")
 
 CACHE_DIR = DATA_DIR / "cache"
@@ -55,10 +60,15 @@ WHISPER_MODEL = os.getenv("WHISPER_MODEL", "small")
 BATCH_SIZE = int(os.getenv("TRANSLATE_BATCH_SIZE", "50"))
 
 
+def current_api_key() -> str:
+    """目前的 API 金鑰（沒有就回空字串）。"""
+    return os.getenv("ANTHROPIC_API_KEY", "").strip()
+
+
 def get_api_key() -> str:
-    key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    key = current_api_key()
     if not key:
         raise RuntimeError(
-            f"找不到 ANTHROPIC_API_KEY，請在 {DATA_DIR / '.env'} 設定（可參考 .env.example）。"
+            f"尚未設定 ANTHROPIC_API_KEY：請按右上角的設定鈕輸入，或寫在 {DATA_DIR / '.env'}（可參考 .env.example）。"
         )
     return key
