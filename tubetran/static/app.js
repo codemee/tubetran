@@ -158,16 +158,92 @@ document.addEventListener("fullscreenchange", () => {
   try { window.pywebview?.api?.set_fullscreen(!!document.fullscreenElement); } catch (_) {}
 });
 document.addEventListener("keydown", (e) => {
-  if ((e.key === "f" || e.key === "F") && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) {
-    toggleFullscreen();
+  if (fsHotkey(e, document.activeElement?.tagName)) toggleFullscreen();
+});
+// 桌面版：點過影片後鍵盤焦點在 YouTube 的 iframe 裡，網頁收不到按鍵（跨網域 iframe 的限制），上面的 keydown 不會觸發。
+// 這時改由 Python 讀 F 鍵的狀態（只在我們的視窗在最前面時才會回報按下）。瀏覽器做不到，點過影片後要先點一下影片外面。
+{
+  let prev = false, busy = false;
+  setInterval(async () => {
+    if (busy || document.activeElement?.tagName !== "IFRAME" || typeof window.pywebview?.api?.fullscreen_key_down !== "function") { prev = false; return; }
+    busy = true;
+    try {
+      const down = await window.pywebview.api.fullscreen_key_down();
+      if (down && !prev) toggleFullscreen();                        // 只在「剛按下」的那一刻切換，按住不放不會一直切換
+      prev = down;
+    } catch (_) { prev = false; } finally { busy = false; }
+  }, 60);
+}
+// ── 全螢幕鈕的顯示／隱藏（邏輯在 fsbutton.js）──
+// 跟著 YouTube 控制列：桌面版直接看控制列右下角的「YouTube」字樣在不在（從螢幕截取那一小塊，算白色像素比例），
+// 它和控制列一起出現、一起淡出，所以不必猜時間。偵測不到時（瀏覽器、字幕蓋住那塊區域、截取失敗）才退回用時間估計：
+// 桌面版讀系統游標位置判斷滑鼠有沒有動，瀏覽器則「滑鼠在播放區裡就一直顯示」。
+{
+  const stage = $("stage");
+  const fsBtn = $("fs");
+  const st = { inside: false, lastActivity: 0, leftAt: -1e9, overButton: false };
+  const api = () => window.pywebview?.api;
+  let tracking = false, lastCursor = null, cursorBusy = false;
+  let logo = { prev: null, value: null, at: -1e9 }, logoBusy = false;
+  const activity = () => { st.lastActivity = performance.now(); };
+  stage.addEventListener("mousemove", activity);                 // 滑鼠在我們自己的元素上移動（例如那顆鈕）
+  document.addEventListener("fullscreenchange", () => { activity(); st.leftAt = performance.now(); }); // 進出全螢幕時先顯示一下
+
+  // YouTube 字樣的位置（CSS 像素，量過 6 種播放器大小、視窗化與全螢幕都一樣）：
+  // 右緣離播放區右邊 59～60、垂直中心離底部 36～37、約 80x16。多取一點邊：右緣 57、寬 86、高 22。
+  function logoRegion() {
+    const r = stage.getBoundingClientRect();
+    const right = r.right - 57, cy = r.bottom - 37;
+    return { left: right - 86, top: cy - 11, width: 86, height: 22 };
   }
-});
-let idleTimer;
-$("stage").addEventListener("mousemove", () => {
-  $("stage").classList.add("active");
-  clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => $("stage").classList.remove("active"), 2500);
-});
+  // 我們自己的字幕若蓋住那塊區域，截到的是字幕不是 YouTube 的字樣，這時不能用偵測結果
+  function subtitleCoversLogo(reg) {
+    for (const d of document.querySelectorAll("#overlay div")) {
+      const b = d.getBoundingClientRect();
+      if (b.width && b.height && b.left < reg.left + reg.width && b.right > reg.left && b.top < reg.top + reg.height && b.bottom > reg.top) return true;
+    }
+    return false;
+  }
+
+  async function pollCursor() {
+    if (cursorBusy) return;
+    cursorBusy = true;
+    try {
+      const p = await api().cursor_pos();
+      tracking = Array.isArray(p);
+      if (tracking && (!lastCursor || p[0] !== lastCursor[0] || p[1] !== lastCursor[1])) activity();
+      if (tracking) lastCursor = p;
+    } catch (_) { tracking = false; } finally { cursorBusy = false; }
+  }
+  async function pollLogo(reg) {
+    if (logoBusy) return;
+    logoBusy = true;
+    try {
+      const f = await api().logo_fraction(reg.left, reg.top, reg.width, reg.height, window.devicePixelRatio || 1);
+      logo = { prev: logo.value, value: typeof f === "number" ? f : null, at: performance.now() };
+    } catch (_) { logo = { prev: null, value: null, at: -1e9 }; } finally { logoBusy = false; }
+  }
+
+  setInterval(() => {
+    const now = performance.now();
+    const inside = stage.matches(":hover");
+    if (inside && !st.inside) st.lastActivity = now;
+    if (!inside && st.inside) st.leftAt = now;
+    st.inside = inside;
+    st.overButton = fsBtn.matches(":hover");
+    const hasVideo = $("empty").hidden;                         // 已經有影片（沒有影片時舞台上只有「貼上網址」的提示）
+    if (inside && typeof api()?.cursor_pos === "function") pollCursor(); else lastCursor = null;
+    // 桌面版：看 YouTube 字樣在不在
+    const reg = logoRegion();
+    const covered = subtitleCoversLogo(reg);
+    if (hasVideo && !covered && typeof api()?.logo_fraction === "function") pollLogo(reg);
+    const logoFresh = hasVideo && !covered && now - logo.at < 700;
+    const state = player?.getPlayerState?.();                    // player 是本檔案最上面用 let 宣告的，不在 window 上
+    const paused = !(state === 1 || state === 3);                // 1 = 播放中、3 = 緩衝中；其餘（暫停、結束、尚未開始）都視為暫停
+    const reading = logoFresh ? fsLogoReading(logo.value, logo.prev) : null;   // 防抖：單次異常值不算
+    stage.classList.toggle("active", fsShouldShow(st, now, paused, tracking, reading));
+  }, 150);
+}
 
 // ── YouTube 播放器 ──
 // 關閉原生字幕（unloadModule 為非官方文件做法，失敗時忽略）

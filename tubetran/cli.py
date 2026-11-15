@@ -9,6 +9,7 @@
 import argparse
 import ctypes
 import json
+import math
 import multiprocessing
 import os
 import socket
@@ -220,6 +221,58 @@ class _DesktopApi:
             self._maximized = True
         elif self._maximized and not winctl.same_rect(winctl.get_rect(hwnd), winctl.work_area(hwnd)):
             self._maximized = False
+
+    def cursor_pos(self):
+        """系統游標位置 [x, y]（網頁用它判斷滑鼠有沒有在 YouTube 的 iframe 裡移動）；不支援的系統回 None。"""
+        if sys.platform != "win32":
+            return None
+        try:
+            return list(winctl.cursor_pos())
+        except OSError:
+            return None
+
+    def fullscreen_key_down(self):
+        """F 鍵現在是不是被按住。點過影片後鍵盤焦點在 YouTube 的 iframe 裡，網頁收不到按鍵（跨網域 iframe 的限制），
+        所以桌面版改由這裡讀按鍵狀態。為了不變成監看鍵盤：只回報「F」一個鍵、只回傳是／否；
+        而且只有我們的視窗在最前面、且沒有同時按著 Ctrl／Alt／Win 時才可能是 True。
+        YouTube 自己的 F（它的全螢幕）已被我們關閉，所以不衝突；YouTube 的其他快捷鍵不受影響。"""
+        if sys.platform != "win32" or self._window is None:
+            return False
+        try:
+            hwnd = self._hwnd()
+            if not hwnd or winctl.foreground_window() != hwnd:
+                return False
+            if any(winctl.key_down(vk) for vk in (0x11, 0x12, 0x5B, 0x5C)):  # Ctrl、Alt、左右 Win
+                return False
+            return winctl.key_down(0x46)                                      # F
+        except OSError:
+            return False
+
+    def logo_fraction(self, left, top, width, height, dpr=1.0):
+        """視窗內一小塊區域（客戶區的 CSS 像素）裡「白色像素」的比例；網頁用它判斷 YouTube 控制列右下角的
+        「YouTube」字樣在不在（那個字樣永遠是白色，且和控制列一起出現／消失）。網頁讀不到跨網域 iframe 的像素，
+        所以由桌面版從螢幕截取。範圍必須完全在我們自己的視窗內且不大；只回傳一個比例，不回傳任何畫面內容。
+        視窗最小化、不支援的系統、參數不合理時回 None。"""
+        if sys.platform != "win32" or self._window is None:
+            return None
+        try:
+            left, top, width, height, dpr = (float(v) for v in (left, top, width, height, dpr))
+        except (TypeError, ValueError):
+            return None
+        if not (0 < width <= 400 and 0 < height <= 200 and 0.5 <= dpr <= 8) or not all(map(math.isfinite, (left, top))):
+            return None
+        hwnd = self._hwnd()
+        if not hwnd or winctl.is_iconic(hwnd):
+            return None
+        ox, oy = winctl.client_origin(hwnd)
+        wx, wy, ww, wh = winctl.get_rect(hwnd)
+        x, y, w, h = ox + round(left * dpr), oy + round(top * dpr), max(1, round(width * dpr)), max(1, round(height * dpr))
+        if x < wx or y < wy or x + w > wx + ww or y + h > wy + wh:  # 只能看自己的視窗，不能拿來截取螢幕上別的地方
+            return None
+        try:
+            return winctl.screen_white_fraction(x, y, w, h)
+        except OSError:
+            return None
 
     def window_state(self):
         self._sync_maximized()

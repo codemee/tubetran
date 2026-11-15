@@ -70,6 +70,10 @@ class _MONITORINFO(ctypes.Structure):
     _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", _RECT), ("rcWork", _RECT), ("dwFlags", wintypes.DWORD)]
 
 
+class _POINT(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+
 _user32_dll = None
 
 
@@ -105,6 +109,16 @@ def _user32():
     u.CallWindowProcW.restype = ctypes.c_ssize_t
     u.IsZoomed.argtypes = [wintypes.HWND]
     u.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+    u.GetCursorPos.argtypes = [ctypes.POINTER(_POINT)]
+    u.GetForegroundWindow.argtypes = []
+    u.GetForegroundWindow.restype = wintypes.HWND
+    u.GetAsyncKeyState.argtypes = [ctypes.c_int]
+    u.GetAsyncKeyState.restype = ctypes.c_short
+    u.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(_POINT)]
+    u.IsIconic.argtypes = [wintypes.HWND]
+    u.GetDC.argtypes = [wintypes.HWND]
+    u.GetDC.restype = wintypes.HDC
+    u.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
     u.NotifyWinEvent.argtypes = [wintypes.DWORD, wintypes.HWND, ctypes.c_long, ctypes.c_long]
     u.NotifyWinEvent.restype = None
     _user32_dll = u
@@ -113,6 +127,105 @@ def _user32():
 
 def find_window(title: str) -> int | None:
     return _user32().FindWindowW(None, title) or None
+
+
+def foreground_window() -> int:
+    """目前在最前面（接收鍵盤輸入）的視窗；沒有就是 0。"""
+    return int(_user32().GetForegroundWindow() or 0)
+
+
+def key_down(vk: int) -> bool:
+    """某個按鍵（虛擬鍵碼）目前是否被按住。"""
+    return bool(_user32().GetAsyncKeyState(vk) & 0x8000)
+
+
+def cursor_pos() -> tuple[int, int]:
+    """滑鼠游標在螢幕上的位置（實體像素）。網頁收不到 YouTube iframe 內的滑鼠事件，
+    所以桌面版靠它判斷「滑鼠有沒有在動」，才能像 YouTube 控制列一樣在不動約 2.5 秒後隱藏全螢幕鈕。"""
+    p = _POINT()
+    if not _user32().GetCursorPos(ctypes.byref(p)):
+        raise OSError("GetCursorPos 失敗")
+    return p.x, p.y
+
+
+WHITE_MIN = 238  # 一個像素的 R、G、B 都不小於這個值，就算「白」
+
+
+def white_fraction(bgra: bytes, width: int, height: int, step: int = 2) -> float:
+    """32 位元 BGRA 像素資料中，「白」像素的比例（每隔 step 個像素取樣，省時間）。純函式，可單元測試。"""
+    if width <= 0 or height <= 0 or len(bgra) < width * height * 4:
+        return 0.0
+    white = total = 0
+    for y in range(0, height, step):
+        row = y * width * 4
+        for x in range(0, width, step):
+            i = row + x * 4
+            total += 1
+            if bgra[i] >= WHITE_MIN and bgra[i + 1] >= WHITE_MIN and bgra[i + 2] >= WHITE_MIN:
+                white += 1
+    return white / total if total else 0.0
+
+
+class _BITMAPINFOHEADER(ctypes.Structure):
+    _fields_ = [("biSize", wintypes.DWORD), ("biWidth", ctypes.c_long), ("biHeight", ctypes.c_long), ("biPlanes", wintypes.WORD),
+                ("biBitCount", wintypes.WORD), ("biCompression", wintypes.DWORD), ("biSizeImage", wintypes.DWORD),
+                ("biXPelsPerMeter", ctypes.c_long), ("biYPelsPerMeter", ctypes.c_long), ("biClrUsed", wintypes.DWORD),
+                ("biClrImportant", wintypes.DWORD)]
+
+
+_gdi32_dll = None
+
+
+def _gdi32():
+    global _gdi32_dll
+    if _gdi32_dll is None:
+        g = ctypes.WinDLL("gdi32")  # 專屬實例，理由同 _user32：不改動程序共用的 ctypes.windll.gdi32
+        g.CreateCompatibleDC.argtypes = [wintypes.HDC]
+        g.CreateCompatibleDC.restype = wintypes.HDC
+        g.CreateCompatibleBitmap.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int]
+        g.CreateCompatibleBitmap.restype = wintypes.HBITMAP
+        g.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
+        g.SelectObject.restype = wintypes.HGDIOBJ
+        g.BitBlt.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.HDC,
+                             ctypes.c_int, ctypes.c_int, wintypes.DWORD]
+        g.GetDIBits.argtypes = [wintypes.HDC, wintypes.HBITMAP, wintypes.UINT, wintypes.UINT, ctypes.c_void_p,
+                                ctypes.POINTER(_BITMAPINFOHEADER), wintypes.UINT]
+        g.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+        g.DeleteDC.argtypes = [wintypes.HDC]
+        _gdi32_dll = g
+    return _gdi32_dll
+
+
+def screen_white_fraction(x: int, y: int, w: int, h: int, step: int = 2) -> float:
+    """從螢幕截取 (x, y, w, h)（實體像素）這一小塊，回傳「白」像素的比例。只回傳一個數字，不保存也不回傳畫面內容。"""
+    u, g = _user32(), _gdi32()
+    hdc = u.GetDC(None)
+    mdc = g.CreateCompatibleDC(hdc)
+    bmp = g.CreateCompatibleBitmap(hdc, w, h)
+    old = g.SelectObject(mdc, bmp)
+    try:
+        g.BitBlt(mdc, 0, 0, w, h, hdc, x, y, 0x00CC0020 | 0x40000000)  # SRCCOPY | CAPTUREBLT（連分層視窗、WebView2 的內容也截得到）
+        bi = _BITMAPINFOHEADER()
+        bi.biSize, bi.biWidth, bi.biHeight, bi.biPlanes, bi.biBitCount = ctypes.sizeof(bi), w, -h, 1, 32
+        buf = (ctypes.c_ubyte * (w * h * 4))()
+        g.GetDIBits(mdc, bmp, 0, h, buf, ctypes.byref(bi), 0)
+        return white_fraction(bytes(buf), w, h, step)
+    finally:
+        g.SelectObject(mdc, old)
+        g.DeleteObject(bmp)
+        g.DeleteDC(mdc)
+        u.ReleaseDC(None, hdc)
+
+
+def client_origin(hwnd: int) -> tuple[int, int]:
+    """視窗客戶區左上角在螢幕上的位置（實體像素）。"""
+    p = _POINT()
+    _user32().ClientToScreen(hwnd, ctypes.byref(p))
+    return p.x, p.y
+
+
+def is_iconic(hwnd: int) -> bool:
+    return bool(_user32().IsIconic(hwnd))
 
 
 def get_rect(hwnd: int) -> Rect:

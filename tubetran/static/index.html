@@ -127,7 +127,10 @@
         <div id="player"></div>
         <div id="overlay"></div>
         <div id="busy" hidden><span class="spin" aria-hidden="true"></span><span id="busy-text"></span></div>
-        <button id="fs" type="button" title="全螢幕 (F)" aria-label="全螢幕" data-i18n-attr="title:fs;aria-label:fs">⛶</button>
+        <button id="fs" type="button" title="全螢幕 (F)" aria-label="全螢幕" data-i18n-attr="title:fs;aria-label:fs">
+          <!-- 全螢幕：四個角的線條圖示（單色，和 YouTube 播放器的按鈕風格一致） -->
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>
+        </button>
       </div>
 
       <!-- 影片標題：有譯名時譯名為主、原標題為輔（與右側影片清單一致） -->
@@ -180,6 +183,7 @@
   </main>
   </div>
   <script src="/static/i18n.js"></script>
+  <script src="/static/fsbutton.js"></script>
   <script src="/static/app.js"></script>
   <script src="/static/settings.js"></script>
   <script src="/static/desktop.js"></script>

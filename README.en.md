@@ -9,7 +9,8 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
 
 - Downloads YouTube captions first (manual captions preferred, then auto-generated); when there are none, downloads the audio and transcribes it locally with Whisper.
 - Translates to Traditional Chinese (Taiwan usage) with the Claude API, including the video title.
-- Subtitles are overlaid on the video and stay visible in fullscreen (press `F`); switch between bilingual / original / translation, and export SRT / VTT.
+- Subtitles are overlaid on the video and stay visible in fullscreen; switch between bilingual / original / translation, and export SRT / VTT.
+- Fullscreen: use the fullscreen button at the player's bottom right (next to the YouTube wordmark), or press `F`. In the desktop app `F` also works after you have clicked the video (in browser mode, click outside the video first so the page can receive `F`). The fullscreen button shows and hides together with YouTube's own controls: the desktop app detects whether the "YouTube" wordmark at the bottom right of the control bar is visible; a browser cannot, so there the button stays visible while the pointer is over the player.
 - Translated lines are usable while translation is still running; the rest continues in the background, with a clear progress bar.
 - A library on the right lists translated, in-progress and interrupted videos; click to watch again, delete the cache if you like. The last playback position is remembered so you can pick up where you left off.
 - Search and tags in the library: search titles (original and translated) and tags; add tags to any video (the "+ Tag" button on the item, press Enter to add), then click tags in the bar above the list to filter. Multiple tags can be selected (a video must have all of them), and filtering combines with search.

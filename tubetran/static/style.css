@@ -223,7 +223,8 @@ body {
 #player, #player iframe { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* 字幕疊在影片上；不攔截點擊，避免擋住播放器操作 */
 #overlay {
-  position: absolute; left: 4%; right: 4%; bottom: max(56px, 9%); z-index: 1;
+  /* 底邊離畫面底部：視窗化至少 30px，全螢幕約 5%（1080p 約 54px） */
+  position: absolute; left: 4%; right: 4%; bottom: max(30px, 5%); z-index: 1;
   text-align: center; pointer-events: none;
   font-size: clamp(14px, 2.6cqw, 44px); line-height: 1.4; color: #fff;
   text-shadow: 0 1px 2px #000;
@@ -234,12 +235,24 @@ body {
   background: rgba(0, 0, 0, .78); border-radius: .3em; font-weight: 500;
 }
 #overlay .t { color: #fde047; }
+/* 全螢幕鈕：右下角，放在 YouTube 播放器自己的「YouTube」字樣右邊、中心對齊它。
+   YouTube 控制列右下角的字樣位置在任何播放器大小（視窗化 570～1070px、全螢幕 1280／1920）都一樣：
+   右緣離播放器右邊 60px、垂直中心離底部 37px（實測）。所以按鈕 28px 高 → bottom: 37 − 14 = 23px；
+   和字樣空 8px → 按鈕左緣離右邊 52px → right: 52 − 28 = 24px。
+   樣式跟 YouTube 的按鈕一致：透明背景、白色線條圖示；加一點陰影，亮的畫面上才看得清楚。 */
 #fs {
-  position: absolute; top: 10px; right: 10px; z-index: 2;
-  padding: 4px 10px; font-size: 18px; border-radius: 8px; border: 0;
-  background: #000a; color: #fff; cursor: pointer; opacity: 0; transition: opacity .2s;
+  position: absolute; bottom: 23px; right: 24px; z-index: 2;
+  display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+  border: 0; border-radius: 7px; background: transparent; color: #fff;
+  cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .25s, background .15s;
 }
-#stage:hover #fs, #stage.active #fs { opacity: 1; }
+/* 顯示與否由 app.js 依 YouTube 控制列的行為決定（.active）；隱藏時不接受點擊，免得誤按看不見的鈕 */
+#stage.active #fs, #fs:focus-visible { opacity: 1; pointer-events: auto; }
+#fs svg {
+  width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .65));
+}
+#fs:hover { background: rgba(255, 255, 255, .18); }
 #stage:fullscreen:not(.active) { cursor: none; }
 
 /* ── 處理進度（取得字幕／辨識／翻譯） ── */
