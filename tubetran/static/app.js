@@ -259,6 +259,7 @@ $("hide-native").addEventListener("change", applyNativeCaptions);
 async function loadVideo(id, start = 0) {
   await apiReady;
   $("empty").hidden = true;
+  $("stage").classList.remove("no-video");
   if (player) player.loadVideoById({ videoId: id, startSeconds: start });
   else
     player = new YT.Player("player", {
@@ -726,6 +727,7 @@ async function deleteVideo(id) {
     try { player?.stopVideo(); } catch (_) {}
     resetView();
     $("empty").hidden = false;
+    $("stage").classList.add("no-video"); // 播放器會停在剛才的縮圖，要藏起來才看得到提示
     setStatus(() => t("status_deleted"));
   }
   loadLibrary();

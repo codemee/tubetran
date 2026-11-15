@@ -221,6 +221,7 @@ body {
 }
 #empty[hidden] { display: none; }
 #player, #player iframe { position: absolute; inset: 0; width: 100%; height: 100%; }
+#stage.no-video #fs, #stage.no-video #player { visibility: hidden; }
 /* 字幕疊在影片上；不攔截點擊，避免擋住播放器操作 */
 #overlay {
   /* 底邊離畫面底部：視窗化至少 30px，全螢幕約 5%（1080p 約 54px） */
