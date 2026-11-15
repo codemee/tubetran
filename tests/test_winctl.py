@@ -1,8 +1,9 @@
 import sys
+from pathlib import Path
 
 import pytest
 
-from tubetran import cli, winctl
+from tubetran import cli, config, winctl
 
 R = (100, 200, 1000, 700)  # x, y, w, h
 MIN = (900, 600)
@@ -184,6 +185,45 @@ def test_per_monitor_dpi_is_enabled_before_the_window_is_created():
 
     src = inspect.getsource(cli.run_desktop)
     assert src.index("_enable_per_monitor_dpi()") < src.index("webview.create_window")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Zone.Identifier 是 NTFS 的功能")
+def test_unblock_clears_the_internet_zone_mark_from_bundled_dlls(tmp_path, monkeypatch):
+    """從 GitHub 下載 ZIP 再解壓縮，檔案會帶「來自網際網路」標記；.NET Framework 拒絕載入這種 DLL，
+    pythonnet 載入 Python.Runtime.dll 失敗，桌面視窗開不起來。啟動時要先把標記清掉（實測重現並驗證過）。"""
+    mark = b"[ZoneTransfer]\r\nZoneId=3\r\n"
+    dll = tmp_path / "pythonnet" / "runtime" / "Python.Runtime.dll"
+    dll.parent.mkdir(parents=True)
+    dll.write_bytes(b"MZ")
+    other = tmp_path / "other.dll"; other.write_bytes(b"MZ")
+    clean = tmp_path / "clean.dll"; clean.write_bytes(b"MZ")        # 本來就沒有標記
+    for f in (dll, other):
+        (f.parent / (f.name + ":Zone.Identifier")).write_bytes(mark)  # 寫入 NTFS 的替代資料流
+    assert Path(f"{dll}:Zone.Identifier").read_bytes() == mark
+
+    monkeypatch.setattr(config, "FROZEN", False)
+    assert cli._unblock_bundled_files() == 0                        # 不是打包版：什麼都不做
+
+    assert cli._unblock_bundled_files(tmp_path) == 2
+    for f in (dll, other):
+        assert not Path(f"{f}:Zone.Identifier").exists()
+        assert f.read_bytes() == b"MZ"                              # 檔案本身沒被動到
+    assert cli._unblock_bundled_files(tmp_path) == 0                # 再跑一次：沒有東西可清，也不會出錯
+
+
+def test_desktop_failure_dialog_explains_how_to_unblock():
+    text = cli._desktop_failure_text(RuntimeError("Failed to resolve Python.Runtime.Loader.Initialize"),
+                                     r"C:\PortableApps\TubeTran", r"C:\x\tubetran.log")
+    assert "Python.Runtime.Loader.Initialize" in text and "解除封鎖" in text and "Unblock-File" in text
+    assert r"Get-ChildItem" in text and r"C:\PortableApps\TubeTran" in text and "--server" in text
+    assert "Unblock" in text.split("TubeTran could not")[1]          # 英文說明也在
+
+
+def test_unblock_runs_before_pywebview_loads_pythonnet():
+    import inspect
+
+    src = inspect.getsource(cli.run_desktop)
+    assert src.index("_unblock_bundled_files()") < src.index("import webview")
 
 
 def test_min_window_size_is_small_enough_for_window_managers():

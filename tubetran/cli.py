@@ -10,6 +10,7 @@ import argparse
 import ctypes
 import json
 import multiprocessing
+import os
 import socket
 import sys
 import threading
@@ -315,7 +316,58 @@ def _enable_per_monitor_dpi(user32=None, shcore=None) -> bool:
         return False
 
 
+def _unblock_bundled_files(root: Path | None = None) -> int:
+    """清除打包版自己資料夾裡 DLL 的「來自網際網路」標記（NTFS 的 Zone.Identifier），回傳清掉幾個。
+
+    從 GitHub 下載 ZIP 再解壓縮時，檔案總管會替每個檔案加上這個標記。.NET Framework 拒絕載入帶標記的組件，
+    pythonnet 載入 Python.Runtime.dll 就失敗（RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize），
+    桌面視窗開不起來。所以在載入 pythonnet 之前先清掉。只在打包版需要；清不掉（唯讀資料夾等）就算了，
+    之後的錯誤會由 _report_desktop_failure 說明解法。"""
+    if root is None:
+        if not config.FROZEN:
+            return 0
+        root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    cleared = 0
+    for dll in root.rglob("*.dll"):
+        try:
+            os.remove(f"{dll}:Zone.Identifier")
+            cleared += 1
+        except OSError:  # 沒有標記（FileNotFoundError）或沒有權限：都不用處理
+            pass
+    return cleared
+
+
+def _desktop_failure_text(exc: BaseException, folder: str, log: str) -> str:
+    return (
+        "水管譯工無法開啟桌面視窗。\n\n"
+        f"錯誤：{type(exc).__name__}: {exc}\n\n"
+        "最常見的原因：ZIP 是從網路下載的，Windows 把裡面的檔案標記成「來自網際網路」而封鎖了。處理方式：\n"
+        "1. 對 ZIP 檔按右鍵 →「內容」→ 勾選「解除封鎖」→ 確定，再重新解壓縮；或\n"
+        f"2. 在 PowerShell 執行：Get-ChildItem \"{folder}\" -Recurse | Unblock-File\n\n"
+        "也可以先改用瀏覽器模式：TubeTran.exe --server，再用瀏覽器開啟 http://127.0.0.1:8000/\n\n"
+        f"詳細記錄：{log}\n\n"
+        "TubeTran could not open its desktop window. Most often the downloaded ZIP is marked as blocked by Windows: "
+        "right-click the ZIP → Properties → Unblock, then extract it again (or run Unblock-File on the folder). "
+        "You can also run TubeTran.exe --server and use a browser."
+    )
+
+
+def _report_desktop_failure(exc: BaseException) -> int:
+    """打包版（沒有主控台）桌面視窗起不來時，用對話框說明，而不是一長串追蹤訊息。"""
+    import traceback
+
+    traceback.print_exception(exc, file=sys.stderr)  # 完整追蹤寫進記錄檔
+    folder = str(Path(sys.executable).parent)
+    text = _desktop_failure_text(exc, folder, str(config.DATA_DIR / "tubetran.log"))
+    try:
+        ctypes.windll.user32.MessageBoxW(None, text, WINDOW_TITLE, 0x10)  # MB_ICONERROR
+    except (OSError, AttributeError):
+        print(text, file=sys.stderr)
+    return 1
+
+
 def run_desktop(native_titlebar: bool = False) -> int:
+    _unblock_bundled_files()  # 必須在載入 pythonnet（pywebview 啟動時）之前
     try:
         import webview
     except ImportError:
@@ -351,6 +403,10 @@ def run_desktop(native_titlebar: bool = False) -> int:
             storage_path=str(config.DATA_DIR / "webview"),
             icon=str(config.STATIC_DIR / "logo" / "tubetran.ico"),
         )
+    except Exception as e:  # noqa: BLE001
+        if not config.FROZEN:
+            raise  # 從原始碼執行時直接看完整的追蹤訊息
+        return _report_desktop_failure(e)
     finally:
         backend.stop()
     return 0

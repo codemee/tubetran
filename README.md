@@ -50,7 +50,9 @@
 
 到 [Releases](https://github.com/codemee/tubetran/releases) 下載 `TubeTran-vX.Y.Z-windows-x64.zip`，解壓縮後執行 `TubeTran.exe`（桌面模式；加上 `--server` 則是伺服器模式）。不需要安裝 Python。第一次執行時，在右上角的設定面板輸入 Claude API 金鑰即可。
 
-> 執行檔沒有數位簽章，Windows SmartScreen 可能會警告；選「其他資訊 → 仍要執行」。每個版本的 ZIP 由 GitHub Actions 自動建置，內容與 PyPI 上同一版本相同。
+> 執行檔沒有數位簽章，Windows SmartScreen 可能會警告；選「其他資訊 → 仍要執行」。
+>
+> 如果桌面視窗打不開、出現 `Failed to resolve Python.Runtime.Loader.Initialize` 之類的錯誤（0.1.1 以前的版本會遇到），是因為 Windows 把從網路下載的檔案標記成「已封鎖」。請對 ZIP 檔按右鍵 →「內容」→ 勾選「解除封鎖」，再重新解壓縮；或在 PowerShell 執行 `Get-ChildItem "TubeTran 資料夾" -Recurse | Unblock-File`。新版程式啟動時會自動清除這個標記。每個版本的 ZIP 由 GitHub Actions 自動建置，內容與 PyPI 上同一版本相同。
 
 ### 用 `uv tool install` 從 PyPI 安裝
 

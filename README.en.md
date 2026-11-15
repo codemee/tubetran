@@ -50,7 +50,9 @@ Requires [uv](https://docs.astral.sh/uv/). Python is limited to 3.12–3.13 (new
 
 Download `TubeTran-vX.Y.Z-windows-x64.zip` from [Releases](https://github.com/codemee/tubetran/releases), extract it, and run `TubeTran.exe` (desktop mode; add `--server` for server mode). You don't need to install Python. On the first run, enter your Claude API key in the settings panel at the top right.
 
-> The executable is not code-signed, so Windows SmartScreen may warn; choose "More info → Run anyway". Each version's ZIP is built automatically by GitHub Actions and contains the same code as that version on PyPI.
+> The executable is not code-signed, so Windows SmartScreen may warn; choose "More info → Run anyway".
+>
+> If the desktop window doesn't open and you see an error such as `Failed to resolve Python.Runtime.Loader.Initialize` (versions up to 0.1.1 can do this), Windows has marked the downloaded files as blocked. Right-click the ZIP → Properties → tick "Unblock", then extract it again; or run `Get-ChildItem "TubeTran folder" -Recurse | Unblock-File` in PowerShell. Newer versions clear this mark automatically on startup. Each version's ZIP is built automatically by GitHub Actions and contains the same code as that version on PyPI.
 
 ### Install from PyPI with `uv tool install`
 
