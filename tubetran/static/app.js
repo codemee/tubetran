@@ -148,14 +148,36 @@ function tick() {
 setInterval(tick, 200);
 
 // ── 全螢幕：讓「播放器＋字幕層」整個容器全螢幕（YouTube 原生全螢幕只會全螢幕 iframe）──
+// 有些環境（macOS 的 WKWebView）沒有元素全螢幕功能，requestFullscreen 不存在或被拒絕；
+// 桌面版這時改成「播放區用 CSS 鋪滿頁面（pseudo-fs）＋整個視窗全螢幕」。
+let pseudoFs = false;
+function setPseudoFs(on) {
+  pseudoFs = on;
+  $("stage").classList.toggle("pseudo-fs", on);
+  try { window.pywebview?.api?.set_fullscreen(on); } catch (_) {}
+  document.dispatchEvent(new Event("fullscreenchange"));
+}
+// 桌面版在使用者用系統方式退出視窗全螢幕時呼叫（視窗已經退出了，只需收回播放區的鋪滿樣式）
+window.__tubetranExitFs = () => {
+  if (!pseudoFs) return;
+  pseudoFs = false;
+  $("stage").classList.remove("pseudo-fs");
+  document.dispatchEvent(new Event("fullscreenchange"));
+};
 function toggleFullscreen() {
+  const stage = $("stage");
+  const canPseudo = typeof window.pywebview?.api?.set_fullscreen === "function";
   if (document.fullscreenElement) document.exitFullscreen();
-  else $("stage").requestFullscreen?.();
+  else if (pseudoFs) setPseudoFs(false);
+  else if (stage.requestFullscreen) {
+    const r = stage.requestFullscreen();
+    if (r?.catch) r.catch(() => { if (canPseudo) setPseudoFs(true); });
+  } else if (canPseudo) setPseudoFs(true);
 }
 $("fs").addEventListener("click", toggleFullscreen);
 // 桌面版（pywebview）：網頁全螢幕只會填滿視窗內容，要同步讓整個視窗全螢幕。瀏覽器裡沒有這個橋接，什麼都不會做
 document.addEventListener("fullscreenchange", () => {
-  try { window.pywebview?.api?.set_fullscreen(!!document.fullscreenElement); } catch (_) {}
+  if (!pseudoFs) { try { window.pywebview?.api?.set_fullscreen(!!document.fullscreenElement); } catch (_) {} }
 });
 document.addEventListener("keydown", (e) => {
   if (fsHotkey(e, document.activeElement?.tagName)) toggleFullscreen();

@@ -214,7 +214,9 @@ body {
   border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border);
   container-type: inline-size;
 }
-#stage:fullscreen { aspect-ratio: auto; height: 100%; border: 0; border-radius: 0; }
+#stage:fullscreen, #stage.pseudo-fs { aspect-ratio: auto; height: 100%; border: 0; border-radius: 0; }
+/* 沒有元素全螢幕功能的環境（macOS 的 WKWebView）：播放區鋪滿整個頁面，再由桌面版讓整個視窗全螢幕 */
+#stage.pseudo-fs { position: fixed; inset: 0; z-index: 9999; }
 #empty {
   position: absolute; inset: 0; display: grid; place-items: center; padding: 24px;
   text-align: center; color: #aab4c8; font-size: 15px;
@@ -254,7 +256,7 @@ body {
   stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .65));
 }
 #fs:hover { background: rgba(255, 255, 255, .18); }
-#stage:fullscreen:not(.active) { cursor: none; }
+#stage:fullscreen:not(.active), #stage.pseudo-fs:not(.active) { cursor: none; }
 
 /* ── 處理進度（取得字幕／辨識／翻譯） ── */
 #progress { margin-top: 12px; padding: 16px 18px; border-color: var(--primary); }

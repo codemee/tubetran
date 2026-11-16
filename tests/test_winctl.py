@@ -60,6 +60,7 @@ def api(monkeypatch):
     state = {"rect": (100, 200, 1000, 700), "set": []}
     monkeypatch.setattr(winctl, "get_rect", lambda hwnd: state["rect"])
     monkeypatch.setattr(winctl, "work_area", lambda hwnd: (0, 0, 1920, 1040))
+    monkeypatch.setattr(winctl, "is_zoomed", lambda hwnd: False)  # 假的 hwnd；不呼叫真的 user32
 
     def set_rect(hwnd, x, y, w, h):
         state["rect"] = (x, y, w, h)

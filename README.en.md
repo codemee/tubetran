@@ -32,12 +32,12 @@ Results are cached in `cache/<video_id>/` inside the data folder, so the same vi
 | | Desktop mode (default) | Server mode (`--server`) |
 | --- | --- | --- |
 | Start | `python -m tubetran` or `TubeTran.exe` | `python -m tubetran --server` or `TubeTran.exe --server` |
-| UI | A standalone frameless window (uses the system's WebView2); on Windows there is no system title bar and the window buttons are drawn at the top right of the header (see below) | No window; open http://127.0.0.1:8000/ in a browser |
+| UI | A standalone frameless window (WebView2 on Windows, the system WKWebView on macOS); on Windows there is no system title bar and the window buttons are drawn at the top right of the header (see below) | No window; open http://127.0.0.1:8000/ in a browser |
 | Port | Fixed `47321` (a random port if it is taken); local connections only | `8000` by default; change with `--host` and `--port` |
 | Extra requirements | The `desktop` extra (pywebview); WebView2 on Windows | None |
 | Quit | Close the window | `Ctrl+C` |
 
-**The desktop window (Windows):** there is no system title bar or frame; the header has its own minimize, maximize/restore and close buttons at the top right. Drag an empty part of the header, or the icon at the top left, to move the window; double-click to maximize/restore (maximizing fills the screen's work area and does not cover the taskbar); drag any edge or corner to resize. If you don't want this look, add `--native-titlebar` to use the system title bar instead. Other operating systems always use the system title bar for now (the frameless window has only been implemented and tested on Windows).
+**The desktop window (Windows):** there is no system title bar or frame; the header has its own minimize, maximize/restore and close buttons at the top right. Drag an empty part of the header, or the icon at the top left, to move the window; double-click to maximize/restore (maximizing fills the screen's work area and does not cover the taskbar); drag any edge or corner to resize. If you don't want this look, add `--native-titlebar` to use the system title bar instead. Other operating systems always use the system title bar for now (the frameless window has only been implemented and tested on Windows). On macOS, fullscreen makes the player fill the window and puts the whole window into fullscreen; the fullscreen button is hidden by estimating from the cursor position (about 4 seconds after the mouse stops) rather than detecting YouTube's control bar as on Windows; and the `F` shortcut after clicking the video is Windows-only (on macOS click outside the video first, or use the button).
 
 Both modes share the same backend and frontend. In desktop mode the backend is a thread inside the same process, so closing the window ends the process and leaves no orphaned processes behind.
 
@@ -45,7 +45,7 @@ Both modes share the same backend and frontend. In desktop mode the backend is a
 
 ## Setup & run
 
-Requires [uv](https://docs.astral.sh/uv/). Python is limited to 3.12–3.13 (newer versions may lack prebuilt wheels for some dependencies). Developed and tested mainly on Windows 11.
+Requires [uv](https://docs.astral.sh/uv/). Python is limited to 3.12–3.13 (newer versions may lack prebuilt wheels for some dependencies). Developed and tested mainly on Windows 11; it also runs on macOS (from source or `uv tool install`; there is no prebuilt app yet).
 
 ### Download the Windows executable (easiest)
 

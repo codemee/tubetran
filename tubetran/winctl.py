@@ -262,7 +262,9 @@ class _NCCALCSIZE_PARAMS(ctypes.Structure):
     _fields_ = [("rgrc", _RECT * 3), ("lppos", ctypes.c_void_p)]
 
 
-_WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+# WINFUNCTYPE 只存在於 Windows 的 ctypes；其他平台用不到這個型別，退而用 CFUNCTYPE 讓模組仍可匯入
+_FUNCTYPE = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)
+_WNDPROC = _FUNCTYPE(ctypes.c_ssize_t, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
 _hooks: dict[int, tuple] = {}  # hwnd -> (回呼物件, 原本的視窗程序)；回呼物件必須一直存活，否則會被回收而當機
 
 

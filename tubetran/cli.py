@@ -202,6 +202,24 @@ class _DesktopApi:
     def _on_shown(self):
         self._apply_resizable_frame()
 
+    def _on_restored(self):
+        """macOS：使用者用系統方式（綠色按鈕、選單、Ctrl+⌘+F）退出視窗全螢幕時，網頁和 pywebview 都不知道，
+        播放區會停在鋪滿的狀態。這裡把旗標對齊實際狀態，並通知網頁收回全螢幕樣式。"""
+        if sys.platform != "darwin" or not self._fullscreen or self._window is None:
+            return
+        self._fullscreen = False
+        try:
+            from webview.platforms.cocoa import BrowserView
+            view = BrowserView.instances.get(self._window.uid)
+            if view is not None:
+                view.is_fullscreen = False  # 否則下次 toggle_fullscreen 會以為還在全螢幕而做反向動作
+        except Exception as e:  # noqa: BLE001
+            print(f"無法同步全螢幕狀態：{e}", file=sys.stderr)
+        try:
+            self._window.evaluate_js("window.__tubetranExitFs && window.__tubetranExitFs()")
+        except Exception:  # noqa: BLE001 — 頁面不在了就算了
+            pass
+
     # ── 自製視窗按鈕（只有無框視窗才會用到）──
     def _hwnd(self):
         try:
@@ -224,6 +242,13 @@ class _DesktopApi:
 
     def cursor_pos(self):
         """系統游標位置 [x, y]（網頁用它判斷滑鼠有沒有在 YouTube 的 iframe 裡移動）；不支援的系統回 None。"""
+        if sys.platform == "darwin":
+            try:
+                from AppKit import NSEvent  # pywebview 在 macOS 本來就依賴 pyobjc
+                p = NSEvent.mouseLocation()
+                return [float(p.x), float(p.y)]
+            except Exception:  # noqa: BLE001 — 讀不到就退回「在播放區內一直顯示」
+                return None
         if sys.platform != "win32":
             return None
         try:
@@ -463,6 +488,7 @@ def run_desktop(native_titlebar: bool = False) -> int:
             min_size=MIN_WINDOW_SIZE, js_api=api, frameless=custom, easy_drag=False,
         )
         api._window.events.shown += api._on_shown
+        api._window.events.restored += api._on_restored
         # private_mode=False + storage_path：保留 localStorage（主題、語言設定）與 cookie
         # icon：視窗標題列／工作列的圖示。沒指定時 Windows 會用 python.exe 的圖示（開發模式）
         webview.start(
