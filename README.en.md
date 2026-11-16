@@ -209,7 +209,7 @@ git tag v0.2.0
 git push origin main v0.2.0
 ```
 
-**Release notes:** the top of the release is the "Highlights" from `release-notes/<tag>.md` (what this version adds or fixes, in words users understand, Chinese and English side by side), followed by the fixed download and install instructions. If the file is missing the workflow stops in the first test stage, before anything is published to PyPI.
+**Release notes:** the top of the release is the "Highlights" from `release-notes/<tag>.md` (what this version adds or fixes, in words users understand, Chinese and English side by side), followed only by the changelog link GitHub generates; download and install instructions live in the README and are not repeated in each release. If the file is missing the workflow stops in the first test stage, before anything is published to PyPI.
 
 **Dry run:** on GitHub go to Actions → Release → Run workflow; it only tests and builds, and publishes nothing.
 

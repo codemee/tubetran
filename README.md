@@ -209,7 +209,7 @@ git tag v0.2.0
 git push origin main v0.2.0
 ```
 
-**Release 說明：** 最前面是 `release-notes/<標籤>.md` 的「本版重點」（這一版新增、修正了什麼，使用者看得懂的描述，中英文並列），後面才是固定的下載與安裝說明。缺少該檔案時，流程會在最前面的測試階段就停下來，不會等到 PyPI 發布後才發現。
+**Release 說明：** 最前面是 `release-notes/<標籤>.md` 的「本版重點」（這一版新增、修正了什麼，使用者看得懂的描述，中英文並列），之後只附 GitHub 自動產生的變更記錄連結；下載與安裝方式寫在 README，不在每個 Release 裡重複。缺少該檔案時，流程會在最前面的測試階段就停下來，不會等到 PyPI 發布後才發現。
 
 **試跑：** 到 GitHub 的 Actions → Release → Run workflow，只會測試與建置，不會發布。
 

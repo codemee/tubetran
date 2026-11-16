@@ -294,21 +294,9 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           ls -la artifacts
-          # 每版的重點寫在 release-notes/<標籤>.md，放在最前面；下載與安裝說明接在後面
+          # Release 說明 = release-notes/<標籤>.md 的「本版重點」，加上 GitHub 自動附的變更記錄連結。
+          # 安裝與使用方式寫在 README，不在每個 Release 裡重複。
           cp "release-notes/$TAG.md" notes.md
-          cat >> notes.md <<'EOF'
-          ## 下載與安裝 / Download
-
-          - **Windows 執行檔：** 下載 `TubeTran-*-windows-x64.zip`，解壓縮後執行 `TubeTran.exe`（桌面模式）。加上 `--server` 則是伺服器模式。第一次執行時在右上角設定面板輸入 Claude API 金鑰。程式沒有數位簽章，Windows SmartScreen 可能會警告。
-          - **macOS App（Apple 晶片）：** 下載 `TubeTran-*-macos-arm64.dmg`，開啟後把 TubeTran 拖進「應用程式」。沒有 Intel 版。程式沒有簽章也沒有公證，第一次開啟時 macOS 會擋下：請在「應用程式」裡對 TubeTran 按右鍵 →「打開」，或到「系統設定 → 隱私權與安全性」按「仍要打開」；也可以執行 `xattr -dr com.apple.quarantine /Applications/TubeTran.app`。
-          - **Python 套件（PyPI）：** `uv tool install --python 3.12 "tubetran[desktop]"`，之後執行 `tubetran`。要加 `--python 3.12`，否則在較新的 Python 上會因語音辨識套件尚無對應版本而安裝失敗。
-          - **macOS app (Apple silicon):** download `TubeTran-*-macos-arm64.dmg`, open it, and drag TubeTran into Applications. There is no Intel build. The app is neither signed nor notarized, so macOS blocks it the first time: in Applications, right-click TubeTran → Open, or go to System Settings → Privacy & Security and click "Open Anyway"; or run `xattr -dr com.apple.quarantine /Applications/TubeTran.app`.
-          - **Windows executable:** download `TubeTran-*-windows-x64.zip`, extract it, and run `TubeTran.exe` (desktop mode); add `--server` for server mode. On first run, enter your Claude API key in the settings panel at the top right. The program is not code-signed, so Windows SmartScreen may warn.
-          - **Python package (PyPI):** `uv tool install --python 3.12 "tubetran[desktop]"`, then run `tubetran`. Keep `--python 3.12`: on newer Pythons the install fails because the speech-recognition package has no matching wheels yet.
-
-          ---
-
-          EOF
           gh release create "$TAG" artifacts/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "TubeTran $TAG" \
