@@ -19,6 +19,11 @@ class Job:
     done: int = 0  # 翻譯階段：已完成句數
     total: int = 0  # 翻譯階段：總句數
     error: str = ""
+    cancelled: bool = False  # 使用者要求取消（並刪除）：背景任務在下一個檢查點結束，並清掉快取
+
+
+class Cancelled(Exception):
+    """背景任務被使用者取消。"""
 
 
 _jobs: dict[str, Job] = {}
@@ -100,12 +105,28 @@ def start_job(video_id: str) -> Job:
 
 
 def _set(job: Job, stage: str, progress: float = 0.0):
+    if job.cancelled:  # 取消中：畫面上維持「取消中」，不要被進度更新蓋掉
+        return
     job.stage, job.progress = stage, progress
+
+
+def _remove_cache(path) -> None:
+    """刪除快取資料夾。Windows 上剛結束的程序可能還握著檔案（例如音檔），所以失敗時稍後再試幾次。"""
+    for _ in range(6):
+        shutil.rmtree(path, ignore_errors=True)
+        if not path.exists():
+            return
+        time.sleep(0.5)
 
 
 def _run(job: Job):
     vid = job.video_id
     cache = config.CACHE_DIR / vid
+
+    def check():  # 各階段之間與每批翻譯後呼叫：被取消就丟出 Cancelled，由下面統一清理
+        if job.cancelled:
+            raise Cancelled
+
     try:
         cache.mkdir(parents=True, exist_ok=True)
         subs_file = cache / "subs.json"
@@ -114,15 +135,20 @@ def _run(job: Job):
         else:
             _set(job, "fetching_subtitles")
             data = subtitles.fetch_subtitles(vid)
+            check()
             if data["segments"]:
                 data["via"] = data["source"]
             else:
                 _set(job, "downloading_audio")
-                audio = transcribe.download_audio(vid, cache)
+                audio = transcribe.download_audio(vid, cache, check)
+                check()
                 _set(job, "transcribing")
-                lang, segs = transcribe.transcribe(
-                    audio, lambda p: _set(job, "transcribing", p)
-                )
+
+                def on_transcribe(p: float):
+                    check()
+                    _set(job, "transcribing", p)
+
+                lang, segs = transcribe.transcribe(audio, on_transcribe)
                 if not segs:
                     raise RuntimeError("語音辨識沒有產生任何內容")
                 data.update(lang=lang, segments=segs, via="whisper")
@@ -132,6 +158,7 @@ def _run(job: Job):
         checkpoint = cache / "trans_partial.json"
 
         def on_translate(done: int, total: int):
+            check()
             job.done = done
             _set(job, "translating", done / total)
 
@@ -151,10 +178,18 @@ def _run(job: Job):
         except Exception:  # noqa: BLE001
             data["title_trans"] = ""
         data["video_id"] = vid
+        check()
         _write_json(result_path(vid), data)
         # 最終結果寫好之後才刪檢查點，中間不會出現「兩邊都沒有」的空窗
         checkpoint.unlink(missing_ok=True)
-        job.status, job.stage, job.progress = "done", "done", 1.0
+        with _lock:  # 與 delete_video 互斥：要嘛在這之前被取消（清掉剛寫的結果），要嘛已完成、之後當一般影片刪除
+            if job.cancelled:
+                raise Cancelled
+            job.status, job.stage, job.progress = "done", "done", 1.0
+    except Cancelled:
+        _remove_cache(cache)
+        with _lock:
+            _jobs.pop(vid, None)
     except Exception as e:  # noqa: BLE001 - 任何錯誤都回報給前端
         job.status, job.error = "error", f"{type(e).__name__}: {e}"
 
@@ -384,17 +419,22 @@ def _backfill_worker(todo: list[dict]) -> None:
                 _backfilling.discard(vid)
 
 
-def delete_video(video_id: str) -> bool:
-    """清除該影片的整個快取資料夾。處理中回傳 False；不存在也視為成功。"""
+def delete_video(video_id: str) -> str:
+    """清除該影片的整個快取資料夾；不存在也視為成功，回傳 "deleted"。
+
+    處理中的影片不能直接刪（任務還在寫檔）：改成要求任務取消，回傳 "cancelling"。
+    任務會在下一個檢查點（約一批翻譯、一小段辨識之後）自己結束並清掉快取資料夾。"""
     if not VIDEO_ID_RE.fullmatch(video_id):
         raise ValueError("不合法的影片 ID")
     with _lock:
         job = _jobs.get(video_id)
         if job and job.status == "running":
-            return False
+            job.cancelled = True
+            job.stage, job.progress = "cancelling", 0.0
+            return "cancelling"
         _jobs.pop(video_id, None)
     shutil.rmtree(config.CACHE_DIR / video_id, ignore_errors=True)
-    return True
+    return "deleted"
 
 
 def job_dict(job: Job) -> dict:

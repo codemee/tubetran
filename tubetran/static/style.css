@@ -167,6 +167,10 @@ body {
 #set-msg.err { color: var(--danger); }
 .set-actions .btn.primary { padding: 8px 22px; }
 .set-actions .btn:disabled { opacity: .5; cursor: not-allowed; }
+/* 設定面板底部的版本編號：小字、低調，可點擊前往 GitHub 發行版本 */
+.set-ver { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border, rgba(128, 128, 128, .25)); text-align: right; font-size: 12px; }
+.set-ver a { color: var(--muted); text-decoration: none; }
+.set-ver a:hover, .set-ver a:focus-visible { color: var(--primary); text-decoration: underline; }
 
 /* 網址輸入框與載入鈕：與圖示同風格——粗外框、大圓角；輸入框內留白，按鈕填色與外框不同色 */
 #form { flex: 1; display: flex; gap: 10px; max-width: 760px; margin: 0 auto; }
@@ -301,6 +305,9 @@ body {
 .vt-main { font-size: 18px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
 .vt-orig { margin-top: 2px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .vt-orig[hidden] { display: none; }
+.yt-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 12.5px; color: var(--muted); text-decoration: none; }
+.yt-link svg { width: 14px; height: 14px; flex: none; }
+.yt-link:hover, .yt-link:focus-visible { color: var(--primary); text-decoration: underline; }
 #vtitle + #progress, #vtitle + #status { margin-top: 10px; }
 
 #status { margin: 12px 2px 0; color: var(--muted); font-size: 14px; min-height: 1.5em; }
@@ -428,22 +435,26 @@ body {
 .item .resume i { display: block; height: 100%; border-radius: 3px; background: #f00; transition: width .4s; }
 /* 「檢查」「刪除」按鈕：疊在縮圖右上角，只有滑鼠移到卡片上（或鍵盤聚焦）時才出現。
    不用 :focus-within——點過卡片後卡片會保有焦點，按鈕就會一直顯示。 */
-.item .del, .item .chk {
+.item .del, .item .chk, .item .yt {
   position: absolute; top: 14px; z-index: 2; width: 26px; height: 26px; border-radius: 7px;
   border: 0; background: rgba(0, 0, 0, .62); color: #fff; cursor: pointer;
   display: grid; place-items: center; opacity: 0; transition: opacity .15s, background .15s;
 }
+.item .yt { right: 46px; text-decoration: none; } /* 在 YouTube 開啟：沒有「檢查」鈕時（尚未完成）緊鄰刪除鈕 */
+.item .yt.r3 { right: 78px; }
+.item.cancelling .yt { right: 14px; } /* 取消中沒有刪除鈕，靠右對齊 */
 .item .del { right: 14px; font-size: 14px; line-height: 1; }
 .item .chk { right: 46px; }
-.item .chk svg { width: 16px; height: 16px; }
-.item:hover .del, .item:hover .chk,
-.item:focus-visible .del, .item:focus-visible .chk,
-.item .del:focus-visible, .item .chk:focus-visible, .item .chk.busy { opacity: 1; }
+.item .chk svg, .item .yt svg { width: 16px; height: 16px; }
+.item:hover .del, .item:hover .chk, .item:hover .yt,
+.item:focus-visible .del, .item:focus-visible .chk, .item:focus-visible .yt,
+.item .del:focus-visible, .item .chk:focus-visible, .item .yt:focus-visible, .item .chk.busy { opacity: 1; }
+.item .yt:hover { background: var(--primary); color: var(--on-primary); }
 .item .chk:hover { background: var(--primary); color: var(--on-primary); }
 .item .del:hover { background: var(--danger); color: #fff; }
 .item .chk.busy { pointer-events: none; }
 .item .chk.busy svg { animation: spin .8s linear infinite; }
-@media (hover: none) { .item .chk, .item .del { opacity: 1; } } /* 觸控裝置沒有 hover，維持常駐 */
+@media (hover: none) { .item .chk, .item .del, .item .yt { opacity: 1; } } /* 觸控裝置沒有 hover，維持常駐 */
 
 /* 翻譯進行中的句子：譯文尚未產生 */
 .pending { opacity: .6; font-style: italic; }
@@ -468,7 +479,7 @@ body {
 .item .state { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--accent); }
 .item.paused .state { color: var(--warn); }
 .item .state[hidden] { display: none; }
-.item.running .del { display: none; } /* 背景任務進行中不能刪除 */
+.item.cancelling .del { display: none; } /* 已要求取消、正在清理：不能再按（處理中的影片按刪除＝取消並刪除） */
 @media (prefers-reduced-motion: reduce) { .item.indet .pfill i { animation: none; width: 100%; opacity: .5; } }
 
 /* ── 窄螢幕 ── */

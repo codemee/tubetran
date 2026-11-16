@@ -12,7 +12,7 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
 - Subtitles are overlaid on the video and stay visible in fullscreen; switch between bilingual / original / translation, and export SRT / VTT.
 - Fullscreen: use the fullscreen button at the player's bottom right (next to the YouTube wordmark), or press `F`. In the desktop app `F` also works after you have clicked the video (in browser mode, click outside the video first so the page can receive `F`). The fullscreen button shows and hides together with YouTube's own controls: the desktop app detects whether the "YouTube" wordmark at the bottom right of the control bar is visible; a browser cannot, so there the button stays visible while the pointer is over the player.
 - Translated lines are usable while translation is still running; the rest continues in the background, with a clear progress bar.
-- A library on the right lists translated, in-progress and interrupted videos; click to watch again, delete the cache if you like. The last playback position is remembered so you can pick up where you left off.
+- A library on the right lists translated, in-progress and interrupted videos; click to watch again, delete the cache if you like (pressing ✕ on a video that is still processing cancels it and cleans up). The last playback position is remembered so you can pick up where you left off. Each item, and the title under the player, has an "Open on YouTube" link for comments and related videos (the desktop app opens it in your default browser).
 - Search and tags in the library: search titles (original and translated) and tags; add tags to any video (the "+ Tag" button on the item, press Enter to add), then click tags in the bar above the list to filter. Multiple tags can be selected (a video must have all of them), and filtering combines with search.
 - Subtitle check: merges duplicates, fixes timing, and fills in blank translations (runs once automatically after translation, and can be re-run from the button next to each library item).
 - Light and dark themes, and Traditional Chinese / English interface. Both are three-state buttons: auto (follow the system, the default) → manual choices.
@@ -107,6 +107,8 @@ The settings button at the top right (left of the language button) opens a panel
 - **Translation model:** the options are the models this key can actually use, queried from Anthropic (a valid key is required).
 - **Speech-to-text (STT) model:** the options are the models officially supported by faster-whisper (from its `available_models()`); only used when a video has no captions.
 
+The bottom of the panel shows the program version (for example `TubeTran v0.1.9`); click it to open the releases on GitHub. On the command line, `tubetran --version` prints it too.
+
 Pressing "Save" writes to `settings.json` in the data folder and takes effect immediately for jobs started afterwards — no restart needed.
 
 > **The key is stored in plain text.** `settings.json` contains your API key, unencrypted and without using the system credential store; on macOS/Linux its file permissions are restricted to your user. Don't share or upload the data folder anywhere. When running from source the data folder is the project root, and `settings.json` is excluded by `.gitignore`.
@@ -144,7 +146,7 @@ Contents:
 | `webview/` | The desktop app's browser data (theme and language settings, cookies); excluded by `.gitignore` |
 | `tubetran.log` | Output log when there is no console (for example when launched by double-click) |
 
-Clicking ✕ in the library deletes that video's whole `cache/<video_id>/` folder.
+Clicking ✕ in the library deletes that video's whole `cache/<video_id>/` folder. If the video is still being processed, ✕ first asks the background job to cancel (it stops after the current step, for example when the current translation batch finishes) and the job removes the cache itself; the card shows "Cancelling…" and then disappears. Claude calls already made are not refunded.
 
 ## Packaging (Windows)
 

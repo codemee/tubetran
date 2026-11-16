@@ -7,7 +7,8 @@ import yt_dlp
 from tubetran import config
 
 
-def download_audio(video_id: str, out_dir: Path) -> Path:
+def download_audio(video_id: str, out_dir: Path, check: Callable[[], None] | None = None) -> Path:
+    """下載音檔。check：下載過程中不斷呼叫，丟出例外就中止下載（用來取消任務）。"""
     out_dir.mkdir(parents=True, exist_ok=True)
     existing = next(out_dir.glob("audio.*"), None)
     if existing:
@@ -18,6 +19,8 @@ def download_audio(video_id: str, out_dir: Path) -> Path:
         "format": "bestaudio/best",
         "outtmpl": str(out_dir / "audio.%(ext)s"),
     }
+    if check:
+        opts["progress_hooks"] = [lambda _d: check()]
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
     path = next(out_dir.glob("audio.*"), None)

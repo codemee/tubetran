@@ -148,13 +148,94 @@ def test_delete_removes_whole_cache_dir(client, tmp_path):
     assert client.get("/api/library").json() == []
 
 
-def test_delete_rejects_bad_id_and_running_job(client, tmp_path):
+def test_delete_rejects_bad_id(client):
     assert client.delete("/api/library/..%2Fetc").status_code in (400, 404)
     assert client.delete("/api/library/short").status_code == 400
+
+
+def test_delete_running_job_requests_cancel_and_keeps_files(client, tmp_path):
     _make(tmp_path, "aaaaaaaaaaa", "x", 1000)
-    jobs._jobs["aaaaaaaaaaa"] = jobs.Job("aaaaaaaaaaa")  # running
-    assert client.delete("/api/library/aaaaaaaaaaa").status_code == 409
-    assert (tmp_path / "aaaaaaaaaaa").exists()
+    job = jobs._jobs["aaaaaaaaaaa"] = jobs.Job("aaaaaaaaaaa")  # running（沒有真的執行緒）
+    r = client.delete("/api/library/aaaaaaaaaaa")
+    assert r.status_code == 202 and r.json() == {"cancelling": "aaaaaaaaaaa"}
+    assert job.cancelled and job.stage == "cancelling"
+    assert (tmp_path / "aaaaaaaaaaa").exists()  # 檔案由任務結束時自己清，這裡不能動
+    # 取消清理完成前不能重新開始同一支影片（會和清理中的任務搶同一個資料夾）
+    assert client.post("/api/process", json={"url": "aaaaaaaaaaa"}).status_code == 409
+
+
+def _fake_pipeline(monkeypatch, translate_fn):
+    segs = [{"start": 0.0, "end": 1.0, "text": f"line {i}"} for i in range(3)]
+    monkeypatch.setattr(
+        jobs.subtitles, "fetch_subtitles",
+        lambda vid: {"title": "t", "lang": "en", "source": "manual", "segments": segs, "duration": 3},
+    )
+    monkeypatch.setattr(jobs.translate, "translate_segments", translate_fn)
+    monkeypatch.setattr(jobs.translate, "translate_title", lambda *a, **k: "標題")
+
+
+def _wait(cond, timeout=5.0):
+    import time
+    end = time.time() + timeout
+    while time.time() < end:
+        if cond():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_cancel_running_job_cleans_up_cache_and_job(client, tmp_path, monkeypatch):
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+
+    def slow_translate(segments, lang, title="", client=None, on_progress=None, checkpoint=None):
+        started.set()
+        release.wait(5)
+        on_progress(1, len(segments))  # 每批翻完會呼叫：被取消的話這裡會丟出 Cancelled
+        raise AssertionError("取消後不應該繼續翻譯")
+
+    _fake_pipeline(monkeypatch, slow_translate)
+    vid = "aaaaaaaaaaa"
+    jobs.start_job(vid)
+    assert started.wait(5) and (tmp_path / vid / "subs.json").exists()
+    assert jobs.delete_video(vid) == "cancelling"
+    release.set()
+    assert _wait(lambda: vid not in jobs._jobs), "取消後任務應該從清單移除"
+    assert not (tmp_path / vid).exists()  # 快取資料夾已清除
+    assert not jobs.result_path(vid).exists()
+
+
+def test_cancel_after_translation_does_not_leave_result(client, tmp_path, monkeypatch):
+    import threading
+
+    gate = threading.Event()
+
+    def translate_then_wait(segments, lang, title="", client=None, on_progress=None, checkpoint=None):
+        gate.wait(5)  # 翻譯「已經完成」，只差最後寫結果
+        return [{**s, "trans": "譯"} for s in segments]
+
+    _fake_pipeline(monkeypatch, translate_then_wait)
+    vid = "bbbbbbbbbbb"
+    job = jobs.start_job(vid)
+    assert _wait(lambda: (tmp_path / vid / "subs.json").exists())
+    assert jobs.delete_video(vid) == "cancelling"
+    gate.set()
+    assert _wait(lambda: vid not in jobs._jobs)
+    assert not (tmp_path / vid).exists() and job.status != "done"
+
+
+def test_delete_after_job_finished_is_a_plain_delete(client, tmp_path, monkeypatch):
+    _fake_pipeline(
+        monkeypatch,
+        lambda segments, lang, title="", client=None, on_progress=None, checkpoint=None:
+            [{**s, "trans": "譯"} for s in segments],
+    )
+    vid = "ccccccccccc"
+    jobs.start_job(vid)
+    assert _wait(lambda: (jobs.get_job(vid) and jobs.get_job(vid).status == "done"))
+    assert client.delete(f"/api/library/{vid}").status_code == 200
+    assert not (tmp_path / vid).exists()
 
 
 def test_normalize_tags():

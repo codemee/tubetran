@@ -7,7 +7,7 @@ import json
 import os
 import re
 
-from tubetran import config
+from tubetran import __version__, config
 
 MAX_STARS = 20
 _MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$")
@@ -34,6 +34,7 @@ def current() -> dict:
     """回給前端的設定：金鑰只回遮罩後的字串，絕不回傳完整金鑰。"""
     key = config.current_api_key()
     return {
+        "version": __version__,  # 顯示在設定面板底部
         "has_key": bool(key),
         "api_key": mask_key(key),
         "translate_model": config.TRANSLATE_MODEL,

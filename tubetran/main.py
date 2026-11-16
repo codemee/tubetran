@@ -2,7 +2,7 @@ import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -34,7 +34,10 @@ def process(req: ProcessReq):
             config.get_api_key()  # 先檢查，免得下載、辨識做到一半才發現無法翻譯
         except RuntimeError as e:
             raise HTTPException(400, str(e))
-    job = jobs.job_dict(jobs.start_job(vid))
+    started = jobs.start_job(vid)
+    if started.cancelled:  # 上一個任務還在取消、清理中：現在重開會和它搶同一個資料夾
+        raise HTTPException(409, "這支影片正在取消中，請稍後再試")
+    job = jobs.job_dict(started)
     resume = jobs.resume_position(jobs.load_progress(vid))
     return {"video_id": vid, **job, "position": resume}
 
@@ -63,11 +66,11 @@ def library():
 @app.delete("/api/library/{video_id}")
 def delete_library_item(video_id: str):
     try:
-        ok = jobs.delete_video(video_id)
+        result = jobs.delete_video(video_id)
     except ValueError:
         raise HTTPException(400, "不合法的影片 ID")
-    if not ok:
-        raise HTTPException(409, "這支影片正在處理中，請稍後再刪除")
+    if result == "cancelling":  # 處理中：已要求任務取消，它結束後會自己清掉快取
+        return JSONResponse({"cancelling": video_id}, status_code=202)
     return {"deleted": video_id}
 
 

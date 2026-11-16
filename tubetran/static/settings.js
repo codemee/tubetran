@@ -34,6 +34,7 @@
 
   function paint() {
     if (!state) return;
+    if (state.version) $("set-ver").textContent = `TubeTran ${/^\d/.test(state.version) ? "v" : ""}${state.version}`;
     const lk = state.locked || {};
     const lockMsg = (name) => t("set_locked", { name });
     keyIn.disabled = !!lk.api_key;

@@ -6,9 +6,10 @@
 # 同一個執行檔：直接執行 = 桌面模式；加 --server = 伺服器模式。
 import sys
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
 datas = [("../tubetran/static", "tubetran/static")]  # 前端靜態檔（config.STATIC_DIR = 套件目錄/static）
+datas += copy_metadata("tubetran")  # 讓打包後 importlib.metadata 讀得到版本號（tubetran/__init__.py 的 __version__）
 binaries = []
 hiddenimports = collect_submodules("uvicorn") + ["httptools", "websockets"]
 

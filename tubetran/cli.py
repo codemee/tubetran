@@ -18,13 +18,17 @@ import threading
 import time
 from pathlib import Path
 
-from tubetran import config, winctl
+import webbrowser
+
+from tubetran import __version__, config, winctl
 
 WINDOW_TITLE = "水管譯工"
 # 視窗的最小尺寸（邏輯像素）。要夠小：視窗管理程式（平鋪／貼齊）會直接指定位置與大小，
 # 比最小值小的要求會被擋住，結果是「位置對了、大小沒變」。窄到這個程度版面仍可用（頂欄換成兩列、內容單欄）。
 # 寬度 400：頂欄第一列要放得下圖示＋設定／語言／主題鈕＋視窗按鈕（約 362px），再窄就會換行、按鈕重疊。
 MIN_WINDOW_SIZE = (400, 240)
+# 桌面版允許從網頁開啟的外部連結（見 _DesktopApi.open_external）
+EXTERNAL_PREFIXES = ("https://www.youtube.com/watch?v=", "https://github.com/codemee/tubetran")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,6 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=8000, help="伺服器模式的埠號，預設 8000")
     p.add_argument("--native-titlebar", action="store_true",
                    help="桌面模式使用系統標題列（預設在 Windows 上是無框視窗加自製視窗按鈕）")
+    p.add_argument("-V", "--version", action="version", version=f"TubeTran {__version__}")
     p.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)  # 檢查打包是否完整
     return p
 
@@ -95,6 +100,8 @@ def selftest() -> int:
             out["pythonnet_clr"] = "ok"
         except Exception as e:  # noqa: BLE001
             out["pythonnet_clr"] = f"FAIL: {type(e).__name__}: {e}"
+    # 打包版必須讀得到版本（TubeTran.spec 要帶上套件的 metadata）；讀不到代表設定漏了
+    out["version"] = f"FAIL: 打包版讀不到版本號（{__version__}）" if config.FROZEN and __version__ == "dev" else __version__
     out.update(
         frozen=config.FROZEN,
         data_dir=str(config.DATA_DIR),
@@ -179,6 +186,14 @@ class _DesktopApi:
         self._normal_rect = None
         self._resize = None
         self._moving = False
+
+    def open_external(self, url):
+        """用系統預設瀏覽器開啟連結。WebView 裡的 target="_blank" 不一定會開外部瀏覽器，所以由這裡處理。
+        只允許 YouTube 與本專案的 GitHub 網址，避免網頁內容藉此開啟任意程式或網址。"""
+        url = str(url)
+        if url.startswith(EXTERNAL_PREFIXES):
+            return bool(webbrowser.open(url))
+        return False
 
     def set_fullscreen(self, on):
         on = bool(on)

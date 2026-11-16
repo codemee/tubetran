@@ -372,11 +372,24 @@ function hideProgress() {
 let curTitle = { title: "", trans: "" };
 const libTrans = (id) => library.find((v) => v.video_id === id)?.title_trans || "";
 
+const ytUrl = (id) => `https://www.youtube.com/watch?v=${id}`;
+
+// 外部連結（YouTube、GitHub）：桌面版的 WebView 不一定會把 target="_blank" 交給系統瀏覽器，
+// 所以有桌面橋接時改由後端開啟；瀏覽器模式則維持一般的新分頁。
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a[data-ext]");
+  const api = window.pywebview && window.pywebview.api;
+  if (!a || !api || !api.open_external) return;
+  e.preventDefault();
+  api.open_external(a.href);
+});
+
 function setTitle(title, trans) {
   curTitle = { title: title || "", trans: trans || "" };
   const el = $("vtitle");
   el.hidden = !title;
   if (!title) return;
+  $("vt-yt").href = ytUrl(videoId);
   const both = trans && trans !== title;
   el.querySelector(".vt-main").textContent = both ? trans : title;
   const orig = el.querySelector(".vt-orig");
@@ -553,7 +566,7 @@ function renderLibrary() {
   // 只有清單結構改變時才整個重畫（避免縮圖閃爍、失去 hover／焦點）；進度只做局部更新
   const key = JSON.stringify([
     videoId, editingId, [...libTags], // 選取中的標籤也要算：卡片上標籤的「選取」樣式會跟著變
-    shown.map((v) => [v.video_id, v.status, v.title, v.title_trans, v.tags]),
+    shown.map((v) => [v.video_id, v.status, v.stage === "cancelling", v.title, v.title_trans, v.tags]),
   ]);
   if (key !== libKey) {
     libKey = key;
@@ -637,7 +650,7 @@ function cardTip(v) {
 
 function libraryHtml(list) {
   return list.map((v) => `
-    <div class="item${v.video_id === videoId ? " active" : ""}${v.status !== "done" ? ` pending ${v.status}` : ""}" data-id="${v.video_id}" role="button" tabindex="0" title="${esc(cardTip(v))}">
+    <div class="item${v.video_id === videoId ? " active" : ""}${v.status !== "done" ? ` pending ${v.status}` : ""}${v.stage === "cancelling" ? " cancelling" : ""}" data-id="${v.video_id}" role="button" tabindex="0" title="${esc(cardTip(v))}">
       <div class="pfill"><i></i></div>
       <div class="thumb">
         <img loading="lazy" alt="" src="https://i.ytimg.com/vi/${v.video_id}/mqdefault.jpg">
@@ -650,10 +663,14 @@ function libraryHtml(list) {
           : `<div class="name">${esc(v.title)}</div>`}
         <div class="state" hidden></div>
       </div>
+      <a class="yt${v.status === "done" ? " r3" : ""}" data-ext target="_blank" rel="noopener noreferrer" href="${ytUrl(v.video_id)}" title="${esc(t("yt_open_tip"))}" aria-label="${esc(t("yt_open"))}">${EXT_ICON}</a>
       ${v.status === "done" ? `<button class="chk" type="button" data-chk="${v.video_id}" title="${esc(t("chk"))}" aria-label="${esc(t("chk"))}">${CHECK_ICON}</button>` : ""}
       <button class="del" type="button" data-del="${v.video_id}" title="${esc(t("del"))}" aria-label="${esc(t("del"))}">✕</button>
     </div>`).join("");
 }
+
+// 單色向量圖示（currentColor）：在 YouTube 開啟（外連箭頭）
+const EXT_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>`;
 
 // 單色向量圖示（currentColor）：清單加勾
 const CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M4 12h6M4 17h9"/><path d="M14 15l2.6 2.6L21 12.5"/></svg>`;
@@ -715,7 +732,9 @@ function paintStatus(v) {
   el.querySelector(".pfill i").style.width = pending && !indet ? `${pct}%` : "";
   const state = el.querySelector(".state");
   state.hidden = !pending;
-  if (v.status === "running") {
+  if (v.status === "running" && v.stage === "cancelling") {
+    state.textContent = t("lib_cancelling");
+  } else if (v.status === "running") {
     state.textContent = v.stage === "translating" && pct > 0
       ? t("lib_running_pct", { pct })
       : t("lib_stage", { stage: I18N["zh-TW"]["stage_" + v.stage] ? stageLabel(v.stage) : t("lib_processing") });
@@ -737,22 +756,24 @@ function paintResume(v) {
 
 async function deleteVideo(id) {
   const v = library.find((x) => x.video_id === id);
-  if (!confirm(t("confirm_delete", { name: v ? (v.title_trans || v.title) : id }))) return;
+  const name = v ? (v.title_trans || v.title) : id;
+  if (!confirm(t(v?.status === "running" ? "confirm_cancel" : "confirm_delete", { name }))) return;
   const res = await fetch(`/api/library/${id}`, { method: "DELETE" });
   if (!res.ok) {
     const detail = (await res.json()).detail;
     setStatus(() => serverMsg(detail), true);
     return;
   }
+  const cancelling = res.status === 202; // 處理中：後端已要求任務取消，它結束後才會真的清掉
   if (id === videoId) {
     ++runId;
     try { player?.stopVideo(); } catch (_) {}
     resetView();
     $("empty").hidden = false;
     $("stage").classList.add("no-video"); // 播放器會停在剛才的縮圖，要藏起來才看得到提示
-    setStatus(() => t("status_deleted"));
+    setStatus(() => t(cancelling ? "status_cancelling" : "status_deleted"));
   }
-  loadLibrary();
+  loadLibrary(); // 還有處理中的項目就會持續更新，取消完成後那一項會自己消失
 }
 
 // 篩選列：點標籤切換（可複選）、清除篩選、搜尋
@@ -781,7 +802,8 @@ $("library").addEventListener("click", (e) => {
   }
   if (e.target.closest("[data-tagdone]")) { e.stopPropagation(); editingId = null; renderLibrary(); return; }
   if (e.target.closest(".tag-editor")) return;
-  const del = e.target.closest("[data-del]");
+  if (e.target.closest("[data-ext]")) return; // 外部連結：只開 YouTube，不要同時開啟影片（開啟動作由上面的全域處理）
+  const del =e.target.closest("[data-del]");
   if (del) { e.stopPropagation(); deleteVideo(del.dataset.del); return; }
   const chk = e.target.closest("[data-chk]");
   if (chk) { e.stopPropagation(); checkVideo(chk.dataset.chk, chk); return; }
