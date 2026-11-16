@@ -174,7 +174,7 @@ jobs:
   dmg:
     name: 打包 macOS App（Apple 晶片）
     needs: test
-    runs-on: macos-14 # arm64（Apple 晶片）；不提供 Intel 版
+    runs-on: macos-latest # Apple 晶片（arm64）；不提供 Intel 版
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
