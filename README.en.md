@@ -200,13 +200,16 @@ On Windows, when you stop a `--reload` server, end its child processes too (`tas
 Releasing is fully automatic: after you push a `v*` tag, [GitHub Actions](https://github.com/codemee/tubetran/blob/main/.github/workflows/release.yml) runs the tests, builds the Python package and **publishes it to PyPI**, packages `TubeTran.exe` on Windows and compresses it into a **ZIP**, packages the app on macOS (Apple silicon) into a **DMG**, then creates a GitHub Release with those files attached.
 
 ```powershell
-# 1. Change `version` in pyproject.toml, update the lock file and commit
+# 1. Change `version` in pyproject.toml, update the lock file, write this version's highlights in release-notes/v0.2.0.md (Chinese and English), and commit them together
 uv lock
+git add release-notes/v0.2.0.md
 git commit -am "Version 0.2.0"
 # 2. Tag it with "v" + the same version and push (the workflow stops if the tag and the version differ)
 git tag v0.2.0
 git push origin main v0.2.0
 ```
+
+**Release notes:** the top of the release is the "Highlights" from `release-notes/<tag>.md` (what this version adds or fixes, in words users understand, Chinese and English side by side), followed by the fixed download and install instructions. If the file is missing the workflow stops in the first test stage, before anything is published to PyPI.
 
 **Dry run:** on GitHub go to Actions → Release → Run workflow; it only tests and builds, and publishes nothing.
 

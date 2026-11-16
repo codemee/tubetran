@@ -26,6 +26,15 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+      - name: 檢查這一版有沒有寫「本版重點」
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          # Release 說明的最前面是 release-notes/<標籤>.md；沒寫就在最前面停下，不要等 PyPI 發布了才發現
+          if [ ! -s "release-notes/${GITHUB_REF_NAME}.md" ]; then
+            echo "::error::缺少 release-notes/${GITHUB_REF_NAME}.md：請先寫這一版的重點（見 README 的「發布新版本」）"
+            exit 1
+          fi
       - uses: astral-sh/setup-uv@v10.3.3
       - name: 安裝依賴（含桌面版）
         run: uv sync --locked --extra desktop
@@ -273,6 +282,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7 # 為了讀取 release-notes/<標籤>.md
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
@@ -284,7 +294,9 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           ls -la artifacts
-          cat > notes.md <<'EOF'
+          # 每版的重點寫在 release-notes/<標籤>.md，放在最前面；下載與安裝說明接在後面
+          cp "release-notes/$TAG.md" notes.md
+          cat >> notes.md <<'EOF'
           ## 下載與安裝 / Download
 
           - **Windows 執行檔：** 下載 `TubeTran-*-windows-x64.zip`，解壓縮後執行 `TubeTran.exe`（桌面模式）。加上 `--server` 則是伺服器模式。第一次執行時在右上角設定面板輸入 Claude API 金鑰。程式沒有數位簽章，Windows SmartScreen 可能會警告。

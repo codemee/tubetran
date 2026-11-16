@@ -200,13 +200,16 @@ uv run pytest
 發布是全自動的：推送 `v*` 標籤後，[GitHub Actions](https://github.com/codemee/tubetran/blob/main/.github/workflows/release.yml) 會依序執行測試、建置 Python 套件並**發布到 PyPI**、在 Windows 上打包 `TubeTran.exe` 並壓成 **ZIP**、在 macOS（Apple 晶片）上打包 App 並封裝成 **DMG**、建立 GitHub Release 並附上這些檔案。
 
 ```powershell
-# 1. 修改 pyproject.toml 的 version，更新鎖定檔並提交
+# 1. 修改 pyproject.toml 的 version，更新鎖定檔；寫好這一版的重點 release-notes/v0.2.0.md（中英文），一起提交
 uv lock
+git add release-notes/v0.2.0.md
 git commit -am "版本 0.2.0"
 # 2. 打上與版本相同的標籤並推送（標籤必須是 v + pyproject.toml 的版本，否則流程會停下來）
 git tag v0.2.0
 git push origin main v0.2.0
 ```
+
+**Release 說明：** 最前面是 `release-notes/<標籤>.md` 的「本版重點」（這一版新增、修正了什麼，使用者看得懂的描述，中英文並列），後面才是固定的下載與安裝說明。缺少該檔案時，流程會在最前面的測試階段就停下來，不會等到 PyPI 發布後才發現。
 
 **試跑：** 到 GitHub 的 Actions → Release → Run workflow，只會測試與建置，不會發布。
 
