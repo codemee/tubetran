@@ -7,7 +7,7 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
 
 ## Features
 
-- Downloads YouTube captions first (manual captions preferred, then auto-generated); when there are none, downloads the audio and transcribes it locally with Whisper.
+- Downloads YouTube captions first (manual captions in the video's own language preferred, then auto-generated; captions in other languages are ignored); when there are none, downloads the audio and transcribes it locally with Whisper.
 - Translates to Traditional Chinese (Taiwan usage) with the Claude API, including the video title.
 - Subtitles are overlaid on the video and stay visible in fullscreen; switch between bilingual / original / translation, and export SRT / VTT.
 - Fullscreen: use the fullscreen button at the player's bottom right (next to the YouTube wordmark), or press `F`. In the desktop app `F` also works after you have clicked the video (in browser mode, click outside the video first so the page can receive `F`). The fullscreen button shows and hides together with YouTube's own controls: the desktop app detects whether the "YouTube" wordmark at the bottom right of the control bar is visible; a browser cannot, so there the button stays visible while the pointer is over the player.
@@ -19,7 +19,7 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
 
 ## How it works
 
-1. Fetch captions with `yt-dlp` (manual captions first, then auto-generated).
+1. Fetch captions with `yt-dlp` (manual captions in the video's language first, then auto-generated).
 2. If there are none: download the audio → transcribe locally with `faster-whisper`.
    (The Claude API does not accept audio input, so Whisper handles speech-to-text and Claude only translates.)
 3. Translate in batches to Traditional Chinese with the Claude API; misaligned or blank results are retried automatically, and each translation must cover only its own source line (so text from later fragments is not pulled forward into the previous line), and a checkpoint is saved after every batch so an interrupted run resumes where it stopped.

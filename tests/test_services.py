@@ -38,6 +38,22 @@ def test_pick_track_uses_video_language_not_first_orig():
     assert subtitles._pick_track({"language": "en-US", "subtitles": {"de": [1], "en": [2]}}) == ("manual", "en", [2])
 
 
+def test_pick_track_ignores_manual_track_in_other_language():
+    # 回歸：英文影片只有別人上傳的俄文人工字幕，曾誤取俄文去翻譯；應改用英文自動字幕原始軌
+    info = {
+        "language": "en-US",
+        "subtitles": {"ru": ["ru-fmt"]},
+        "automatic_captions": {"en-orig": ["en-fmt"], "ru": ["x"]},
+    }
+    assert subtitles._pick_track(info) == ("auto", "en", ["en-fmt"])
+    # 同語系的變體（en-GB）仍視為相符
+    assert subtitles._pick_track({"language": "en-US", "subtitles": {"en-GB": [1], "ru": [2]}}) == ("manual", "en-GB", [1])
+    # 只有他語人工字幕、也沒有自動字幕：不採用，交給 Whisper
+    assert subtitles._pick_track({"language": "en-US", "subtitles": {"ru": [1]}}) is None
+    # 影片語言不明、只有一軌人工字幕：沒有更好的選擇，照用
+    assert subtitles._pick_track({"subtitles": {"ja": [1]}}) == ("manual", "ja", [1])
+
+
 class FakeClient:
     """第一次漏掉最後一句，驗證缺漏重試；並記錄呼叫次數。"""
 

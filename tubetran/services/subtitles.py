@@ -47,8 +47,15 @@ def _pick_track(info: dict) -> tuple[str, str, list[dict]] | None:
     base = lang.split("-")[0]  # en-US -> en
     manual = info.get("subtitles") or {}
     manual = {k: v for k, v in manual.items() if k != "live_chat"}
-    if manual:
-        key = next((k for k in (lang, base) if k and k in manual), None) or next(iter(manual))
+    # 人工字幕也必須是影片本身的語言：常有別人上傳的他語翻譯軌（例如英文影片只有俄文軌），
+    # 不能隨便取第一軌，否則會變成「英文 → 俄文 → 中文」。語言不符就改走自動字幕的原始軌。
+    key = next((k for k in (lang, base) if k and k in manual), None)
+    if key is None and base:
+        key = next((k for k in manual if k.split("-")[0] == base), None)  # en-GB 等同語系
+    if key:
+        return "manual", key, manual[key]
+    if not lang and len(manual) == 1:  # 影片語言不明、只有一軌時，除了它也沒有更好的選擇
+        key = next(iter(manual))
         return "manual", key, manual[key]
     auto = info.get("automatic_captions") or {}
     # 自動字幕清單會列出很多語言（含 -orig 結尾的軌），不能直接取第一個，
