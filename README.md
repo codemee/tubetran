@@ -165,6 +165,21 @@ uv run python -m tubetran --help          # 查看所有參數
 
 在影片庫按 ✕ 會刪除該影片整個 `cache/<video_id>/` 資料夾。影片還在處理中時，按 ✕ 會先要求背景任務取消（約在目前這一步，例如一批翻譯完成後結束），任務結束時自己清除快取，卡片會顯示「取消中…」後消失；已呼叫 Claude 翻譯的部分無法退費。
 
+### 把翻好的影片搬到其他電腦
+
+每支影片的所有資料都在自己的 `cache/<video_id>/` 資料夾裡（`video_id` 是網址 `v=` 後面那 11 個字元），整個資料夾複製過去即可，不必重新翻譯、也不需要 API 金鑰就能觀看：
+
+1. 在原本的電腦找到 `資料資料夾\cache\<video_id>`（例如 `%LOCALAPPDATA%\TubeTran\cache\gKDnMEsYOWs`）。
+2. 複製到另一台電腦的 `資料資料夾\cache\` 底下（沒有 `cache` 就自己建立；兩台電腦的作業系統不同也可以）。
+3. 開啟水管譯工，影片就會出現在右側影片庫（播放位置與標籤也一起帶過去）。
+
+| 檔案 | 必要？ | 說明 |
+| --- | --- | --- |
+| `translated.json` | **必要** | 翻好的字幕與標題 |
+| `subs.json`、`glossary.json` | 建議 | 之後要按 ↻ 重新處理時用；無字幕影片少了 `subs.json` 就得重新下載音檔、重新辨識 |
+| `progress.json`、`tags.json` | 選用 | 播放位置、標籤 |
+| `audio.*` | 不必 | 無字幕影片的音檔（可能數十 MB），辨識完就用不到了 |
+
 ## 打包（Windows）
 
 ```powershell
@@ -197,7 +212,7 @@ tubetran/
   settings.py       設定面板的儲存、金鑰遮罩、模型清單
   main.py           FastAPI 路由與靜態檔
   jobs.py           背景任務、快取、影片庫、播放進度
-  services/         subtitles（字幕）、sentences（片段重組成整句）、transcribe（Whisper）、translate（翻譯、術語表）、review（檢查）、export（SRT/VTT）
+  services/         subtitles（字幕）、sentences（片段重組成整句）、ytdl（yt-dlp 共用設定）、transcribe（Whisper）、translate（翻譯、術語表）、review（檢查）、export（SRT/VTT）
   static/           前端（無建置步驟）：index.html、app.js、settings.js、desktop.js、i18n.js、linebreak.js（字幕折行）、style.css、logo/
 packaging/          PyInstaller 設定與啟動入口（launch.py）
 tests/              pytest
@@ -236,9 +251,10 @@ git push origin main v0.2.0
 
 - 介面語言只影響畫面文字；字幕與標題一律翻譯成繁體中文。
 - 舊版翻譯的影片仍是「一段一則」，可能有譯文錯位；在影片庫按 ↻ 重新處理即可改成一句一則（會重新呼叫 Claude）。
-- 無字幕影片的流程（下載音檔 → Whisper 辨識）目前只驗證過程式庫能載入，尚未用真實影片完整跑過。
+- 無字幕影片要先下載音檔、再用 Whisper 在本機辨識，比有字幕的影片慢很多（17 分鐘的影片，CPU 上約需數分鐘；第一次使用還要下載模型）。
 - 翻譯會呼叫 Claude API 並產生費用；快取可避免重複付費，但「重新處理」或刪除快取後再看會重新翻譯。
-- YouTube 常變動，若下載失敗請更新：`uv lock --upgrade-package yt-dlp && uv sync`。`yt-dlp` 可能提示找不到 JavaScript runtime（`deno`），目前不影響字幕與音檔下載；若遇到下載失敗可安裝它（`scoop install deno`）。
+- YouTube 常變動，若下載失敗請更新：`uv lock --upgrade-package yt-dlp && uv sync`。
+- 無字幕影片下載音檔時，YouTube 要解一道 JavaScript 驗證：電腦上有 deno、node 或 bun 的話會自動使用（建議安裝 deno：Windows `scoop install deno`、macOS `brew install deno`）。沒有也能用，只是 YouTube 偶爾會回「HTTP Error 403: Forbidden」，程式會自動重試 3 次；仍失敗時稍後再試。有字幕的影片不受影響。
 - 僅供個人使用，請遵守 YouTube 服務條款與影片版權。
 
 ## 授權

@@ -4,6 +4,8 @@ import re
 
 import yt_dlp
 
+from tubetran.services import ytdl
+
 VIDEO_ID_RE = re.compile(
     r"(?:v=|youtu\.be/|/embed/|/shorts/|/live/)([A-Za-z0-9_-]{11})"
 )
@@ -85,7 +87,7 @@ def _pick_track(info: dict) -> tuple[str, str, list[dict]] | None:
 
 def fetch_subtitles(video_id: str) -> dict:
     """回傳 {title, lang, source, segments}；無字幕時 segments 為空、source 為 None。"""
-    opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+    opts = {**ytdl.base_opts(), "skip_download": True}
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(
             f"https://www.youtube.com/watch?v={video_id}", download=False

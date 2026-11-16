@@ -78,7 +78,7 @@ def selftest() -> int:
     # 和桌面模式啟動時做同樣的事：先清除網路來源標記，再載入 pythonnet。
     # 這樣在「帶標記的副本」上執行 --selftest，就等於驗證桌面模式在下載來的 ZIP 上能不能啟動。
     out["unblocked_dlls"] = _unblock_bundled_files()
-    for name in ("fastapi", "uvicorn", "yt_dlp", "anthropic", "faster_whisper",
+    for name in ("fastapi", "uvicorn", "yt_dlp", "yt_dlp_ejs", "anthropic", "faster_whisper",
                  "ctranslate2", "av", "onnxruntime", "webview"):
         try:
             mod = importlib.import_module(name)
@@ -90,6 +90,11 @@ def selftest() -> int:
         out["whisper_vad_assets"] = sorted(os.listdir(get_assets_path()))
     except Exception as e:  # noqa: BLE001
         out["whisper_vad_assets"] = f"FAIL: {type(e).__name__}: {e}"
+    try:  # yt-dlp 解下載驗證用的 JS 腳本是資料檔，PyInstaller 要另外收進來（TubeTran.spec）
+        from yt_dlp_ejs.yt.solver import core, lib
+        out["ytdl_ejs_scripts"] = "ok" if core() and lib() else "FAIL: 腳本是空的"
+    except Exception as e:  # noqa: BLE001
+        out["ytdl_ejs_scripts"] = f"FAIL: {type(e).__name__}: {e}"
     if sys.platform == "win32":
         # 只 import webview 看不出 .NET 載入有沒有問題：pywebview 要到開視窗時才載入 pythonnet。
         # 這裡實際載入 pythonnet 與 WinForms 組件（桌面模式一開視窗就會做的事）。

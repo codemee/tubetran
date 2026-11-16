@@ -165,6 +165,21 @@ Contents:
 
 Clicking ✕ in the library deletes that video's whole `cache/<video_id>/` folder. If the video is still being processed, ✕ first asks the background job to cancel (it stops after the current step, for example when the current translation batch finishes) and the job removes the cache itself; the card shows "Cancelling…" and then disappears. Claude calls already made are not refunded.
 
+### Moving translated videos to another computer
+
+Everything about a video lives in its own `cache/<video_id>/` folder (`video_id` is the 11 characters after `v=` in the URL). Copy the whole folder over; there is no need to translate again, and no API key is needed to watch:
+
+1. On the original computer, find `<data folder>\cache\<video_id>` (for example `%LOCALAPPDATA%\TubeTran\cache\gKDnMEsYOWs`).
+2. Copy it into `<data folder>\cache\` on the other computer (create `cache` if it does not exist; the two computers may run different operating systems).
+3. Open TubeTran; the video appears in the library on the right (playback position and tags come along).
+
+| File | Needed? | Notes |
+| --- | --- | --- |
+| `translated.json` | **Required** | The translated subtitles and title |
+| `subs.json`, `glossary.json` | Recommended | Used if you later press ↻ Reprocess; without `subs.json` a no-captions video has to download and transcribe the audio again |
+| `progress.json`, `tags.json` | Optional | Playback position, tags |
+| `audio.*` | Not needed | Audio of a no-captions video (can be tens of MB); no longer used once transcribed |
+
 ## Packaging (Windows)
 
 ```powershell
@@ -197,7 +212,7 @@ tubetran/
   settings.py       Settings panel storage, key masking, model lists
   main.py           FastAPI routes and static files
   jobs.py           Background jobs, cache, library, playback progress
-  services/         subtitles, sentences (regroup fragments into sentences), transcribe (Whisper), translate (incl. glossary), review (check), export (SRT/VTT)
+  services/         subtitles, sentences (regroup fragments into sentences), ytdl (shared yt-dlp options), transcribe (Whisper), translate (incl. glossary), review (check), export (SRT/VTT)
   static/           Frontend (no build step): index.html, app.js, settings.js, desktop.js, i18n.js, linebreak.js (subtitle wrapping), style.css, logo/
 packaging/          PyInstaller configuration and launcher (launch.py)
 tests/              pytest
@@ -236,9 +251,10 @@ git push origin main v0.2.0
 
 - The interface language only affects on-screen text; subtitles and titles are always translated into Traditional Chinese.
 - Videos translated by older versions are still one fragment per subtitle and may have misaligned translations; press ↻ Reprocess in the library to switch them to one sentence per subtitle (this calls Claude again).
-- The no-captions flow (download audio → Whisper) has so far only been verified to the point that the libraries load; it has not yet been run end to end on a real video.
+- Videos without captions must first download the audio and transcribe it locally with Whisper, which is much slower than videos with captions (a 17-minute video takes several minutes on a CPU, and the model is downloaded on first use).
 - Translation calls the Claude API and costs money; the cache avoids paying twice, but reprocessing or deleting the cache and watching again translates it again.
-- YouTube changes often; if downloads fail, update with `uv lock --upgrade-package yt-dlp && uv sync`. `yt-dlp` may warn that no JavaScript runtime (`deno`) was found; this currently does not affect caption or audio downloads, and if downloads do fail you can install it (`scoop install deno`).
+- YouTube changes often; if downloads fail, update with `uv lock --upgrade-package yt-dlp && uv sync`.
+- To download the audio of a video without captions, YouTube requires solving a JavaScript challenge: if deno, node or bun is installed it is used automatically (deno is recommended: `scoop install deno` on Windows, `brew install deno` on macOS). It also works without one, but YouTube occasionally answers "HTTP Error 403: Forbidden"; TubeTran retries 3 times automatically, and if it still fails, try again later. Videos with captions are not affected.
 - For personal use only. Respect YouTube's Terms of Service and video copyright.
 
 ## License

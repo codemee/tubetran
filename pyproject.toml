@@ -1,6 +1,6 @@
 [project]
 name = "tubetran"
-version = "0.1.10"
+version = "0.1.11"
 description = "水管譯工 (TubeTran)：播放 YouTube 並顯示 Claude 翻譯的雙語字幕"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -21,11 +21,14 @@ classifiers = [
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "anthropic>=2.8.0",
+    # av 19 拿掉了 av.open() 的 metadata_errors 參數，faster-whisper 1.2.1 讀音檔時還在用（TypeError）。
+    # 等 faster-whisper 修正後再放寬（tests/test_transcribe_audio.py 會抓到）
+    "av>=16,<19",
     "fastapi>=0.162.7",
     "faster-whisper>=1.2.1",
     "python-dotenv>=1.2.4",
     "uvicorn[standard]>=0.54.0",
-    "yt-dlp>=2026.10.26",
+    "yt-dlp[default]>=2026.10.26",
 ]
 
 [project.urls]

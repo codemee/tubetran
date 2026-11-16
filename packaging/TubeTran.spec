@@ -14,7 +14,8 @@ binaries = []
 hiddenimports = collect_submodules("uvicorn") + ["httptools", "websockets"]
 
 # 本機語音辨識：faster-whisper 的資料檔（VAD 模型）與 ctranslate2 的原生程式庫
-for pkg in ("faster_whisper", "ctranslate2"):
+# yt_dlp_ejs：yt-dlp 解 YouTube 下載驗證用的 JS 腳本（資料檔，電腦上有 deno／node／bun 時才會用到）
+for pkg in ("faster_whisper", "ctranslate2", "yt_dlp_ejs"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b
