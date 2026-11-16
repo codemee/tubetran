@@ -434,9 +434,32 @@ document.addEventListener("visibilitychange", () => { if (document.hidden) saveP
 // ── 處理流程 ──
 const STEP_OF = {
   queued: "subs", fetching_subtitles: "subs",
-  downloading_audio: "stt", transcribing: "stt", translating: "trans",
+  downloading_audio: "stt", downloading_model: "stt", loading_model: "stt", preparing_audio: "stt",
+  transcribing: "stt", translating: "trans",
 };
 const STEP_ORDER = ["subs", "stt", "trans"];
+// 語音辨識要好一陣子：在進度條下方列出它的各個階段，讓使用者知道現在在做什麼。
+// 「下載模型」只在模型還沒下載過時才會經過，所以有經過才列出來
+const STT_STAGES = ["downloading_audio", "downloading_model", "loading_model", "preparing_audio", "transcribing"];
+const STT_PCT = new Set(["downloading_audio", "downloading_model", "transcribing"]); // 有百分比的階段
+let sttSeen = new Set();
+
+function renderSttStages(j) {
+  const box = $("stt-stages");
+  const cur = STT_STAGES.indexOf(j.stage);
+  if (cur >= 0) sttSeen.add(j.stage);
+  box.hidden = !sttSeen.size; // 有字幕的影片不會經過這些階段
+  if (box.hidden) return;
+  const pct = Math.round((j.progress || 0) * 100);
+  box.innerHTML = STT_STAGES
+    .filter((s) => s !== "downloading_model" || sttSeen.has(s))
+    .map((s) => {
+      const i = STT_STAGES.indexOf(s);
+      const state = cur < 0 || i < cur ? "done" : i === cur ? "active" : ""; // cur < 0：已經在翻譯，全部完成
+      const extra = state === "active" && STT_PCT.has(s) && pct > 0 ? ` <b>${pct}%</b>` : "";
+      return `<li class="${state}">${esc(t("sub_" + s))}${extra}</li>`;
+    }).join("");
+}
 
 // 明顯的進度卡片：步驟、進度條、百分比；影片上也有提示（全螢幕時看得到）
 function showProgress(j) {
@@ -451,13 +474,13 @@ function showProgress(j) {
   });
 
   const pct = Math.round((j.progress || 0) * 100);
-  const determinate = (j.stage === "transcribing" || j.stage === "translating") && pct > 0;
+  const determinate = (STT_PCT.has(j.stage) || j.stage === "translating") && pct > 0;
   let label = stageLabel(j.stage);
   if (j.stage === "translating") {
     label = j.total ? t("lbl_translating_n", { done: j.done, total: j.total }) : t("lbl_translating");
-  } else if (j.stage === "transcribing") label = t("lbl_transcribing");
-  else if (j.stage === "downloading_audio") label = t("lbl_downloading");
+  } else if (STEP_OF[j.stage] === "stt") label = t("lbl_" + j.stage);
   else if (j.stage === "fetching_subtitles") label = t("lbl_fetching");
+  renderSttStages(j);
 
   $("phint").textContent = partialShown ? t("hint_partial") : t("hint_wait");
   $("progress").hidden = false;
@@ -476,6 +499,8 @@ function hideProgress() {
   $("progress").hidden = true;
   $("busy").hidden = true;
   document.querySelector('.steps [data-step="stt"]').hidden = true;
+  sttSeen = new Set();
+  $("stt-stages").hidden = true;
 }
 
 // ── 影片標題（播放器下方）：有譯名時譯名為主、原標題為輔，與右側影片清單一致 ──

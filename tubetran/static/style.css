@@ -275,6 +275,15 @@ body {
 .steps li.done { color: var(--text); }
 .steps li.done::before { content: "✓ "; color: var(--accent); font-weight: 700; }
 .steps li.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
+/* 語音辨識的各階段（進度條下方）：完成打勾、進行中標示、還沒到的淡色 */
+#stt-stages { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13.5px; }
+#stt-stages[hidden] { display: none; }
+#stt-stages li { color: var(--muted); padding-left: 1.4em; position: relative; }
+#stt-stages li::before { content: "○"; position: absolute; left: 0; }
+#stt-stages li.done { color: var(--text); }
+#stt-stages li.done::before { content: "✓"; color: var(--accent); font-weight: 700; }
+#stt-stages li.active { color: var(--primary); font-weight: 600; }
+#stt-stages li.active::before { content: "▶"; }
 .pbar { height: 14px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
 .pbar .fill {
   height: 100%; width: 0; border-radius: 999px; background: var(--primary);

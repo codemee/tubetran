@@ -141,15 +141,21 @@ def _run(job: Job):
                 data["via"] = data["source"]
             else:
                 _set(job, "downloading_audio")
-                audio = transcribe.download_audio(vid, cache, check)
+                audio = transcribe.download_audio(
+                    vid, cache, check, on_progress=lambda p: _set(job, "downloading_audio", p))
                 check()
-                _set(job, "transcribing")
+
+                def on_stage(stage: str):  # 下載模型 → 載入模型 → 解碼音檔、偵測語言 → 辨識
+                    check()
+                    _set(job, stage)
 
                 def on_transcribe(p: float):
                     check()
                     _set(job, "transcribing", p)
 
-                lang, segs = transcribe.transcribe(audio, on_transcribe)
+                lang, segs = transcribe.transcribe(
+                    audio, on_transcribe, on_stage,
+                    on_model_progress=lambda p: _set(job, "downloading_model", p))
                 if not segs:
                     raise RuntimeError("語音辨識沒有產生任何內容")
                 data.update(lang=lang, segments=segs, via="whisper")
