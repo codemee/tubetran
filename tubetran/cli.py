@@ -494,7 +494,8 @@ def run_desktop(native_titlebar: bool = False) -> int:
         webview.start(
             private_mode=False,
             storage_path=str(config.DATA_DIR / "webview"),
-            icon=str(config.STATIC_DIR / "logo" / "tubetran.ico"),
+            # macOS 用有圓角底板與留白的圖（pywebview 會拿它覆蓋 Dock 圖示；.ico 是滿版的，放在 Dock 上會偏大）
+            icon=str(config.STATIC_DIR / "logo" / ("tubetran-macos.png" if sys.platform == "darwin" else "tubetran.ico")),
         )
     except Exception as e:  # noqa: BLE001
         if not config.FROZEN:
