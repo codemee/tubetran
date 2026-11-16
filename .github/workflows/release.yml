@@ -4,7 +4,8 @@ name: Release
 #   1. 測試
 #   2. 建置 Python 套件（wheel + sdist）並自動發布到 PyPI
 #   3. 在 Windows 上用 PyInstaller 打包成 exe，壓成 ZIP
-#   4. 建立 GitHub Release，附上 ZIP 與 Python 套件供下載
+#   4. 在 macOS（Apple 晶片）上用 PyInstaller 打包成 App，封裝成 DMG
+#   5. 建立 GitHub Release，附上 ZIP、DMG 與 Python 套件供下載
 # 也可以手動執行（Actions → Release → Run workflow）做「試跑」：只建置與測試，不發布。
 
 on:
@@ -170,11 +171,83 @@ jobs:
             ${{ env.zip }}.sha256
           if-no-files-found: error
 
+  dmg:
+    name: 打包 macOS App（Apple 晶片）
+    needs: test
+    runs-on: macos-14 # arm64（Apple 晶片）；不提供 Intel 版
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - name: 讀取版本號
+        id: ver
+        run: |
+          v=$(uv run --no-project python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: 安裝依賴（含桌面版與 PyInstaller）
+        run: uv sync --locked --extra desktop
+      - name: 用 PyInstaller 打包
+        run: uv run pyinstaller packaging/TubeTran.spec --noconfirm --clean --distpath packaging/dist --workpath packaging/build
+      - name: 自我檢查（各依賴是否都被正確打包）
+        run: |
+          export TUBETRAN_DATA_DIR="$RUNNER_TEMP/selftest-data"
+          export TUBETRAN_SELFTEST_OUT="$RUNNER_TEMP/selftest.json"
+          code=0
+          packaging/dist/TubeTran.app/Contents/MacOS/TubeTran --selftest >/dev/null 2>&1 || code=$?
+          [ -f "$TUBETRAN_SELFTEST_OUT" ] && cat "$TUBETRAN_SELFTEST_OUT"
+          if [ "$code" -ne 0 ]; then echo "::error::--selftest 失敗，結束碼 $code"; exit 1; fi
+      - name: 煙霧測試（以伺服器模式啟動，確認首頁與前端檔可以取得）
+        run: |
+          export TUBETRAN_DATA_DIR="$RUNNER_TEMP/smoke-data"
+          export ANTHROPIC_API_KEY="sk-ant-ci-smoke-test"
+          packaging/dist/TubeTran.app/Contents/MacOS/TubeTran --server --port 8017 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          ok=0
+          for i in $(seq 1 60); do
+            sleep 1
+            if curl -fs -o /dev/null http://127.0.0.1:8017/; then ok=1; break; fi
+          done
+          [ "$ok" = 1 ] || { echo "::error::伺服器 60 秒內沒有啟動"; exit 1; }
+          for u in / /static/app.js /static/desktop.js /static/style.css /api/settings /api/library; do
+            s=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8017$u")
+            echo "$u -> $s"
+            [ "$s" = 200 ] || { echo "::error::$u 回傳 $s"; exit 1; }
+          done
+      - name: 封裝成 DMG
+        run: |
+          v="${{ steps.ver.outputs.version }}"
+          dmg="TubeTran-v$v-macos-arm64.dmg"
+          # 磁碟映像的內容：App、Applications 捷徑（拖曳安裝用）、授權與說明
+          stage="$RUNNER_TEMP/dmg-root"
+          rm -rf "$stage" && mkdir -p "$stage"
+          cp -R packaging/dist/TubeTran.app "$stage/"
+          ln -s /Applications "$stage/Applications"
+          cp LICENSE README.md README.en.md "$stage/"
+          # hdiutil 在 CI 上偶爾會回報「Resource busy」，失敗就重試
+          for i in 1 2 3; do
+            hdiutil create -volname "TubeTran" -srcfolder "$stage" -ov -format UDZO "$dmg" && break
+            echo "hdiutil 失敗（第 $i 次），5 秒後重試"; sleep 5
+          done
+          [ -f "$dmg" ] || { echo "::error::DMG 建立失敗"; exit 1; }
+          hdiutil verify "$dmg"
+          ls -lh "$dmg"
+          hash=$(shasum -a 256 "$dmg" | cut -d' ' -f1)
+          echo "$hash  $dmg" > "$dmg.sha256"
+          echo "SHA-256: $hash"
+          echo "dmg=$dmg" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-dmg
+          path: |
+            ${{ env.dmg }}
+            ${{ env.dmg }}.sha256
+          if-no-files-found: error
+
   publish-pypi:
     name: 發布到 PyPI
     # 只有推送標籤才會發布；手動試跑不會
     if: github.event_name == 'push'
-    needs: [test, dist, exe]
+    needs: [test, dist, exe, dmg]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -195,7 +268,7 @@ jobs:
   github-release:
     name: 建立 GitHub Release
     if: github.event_name == 'push'
-    needs: [test, dist, exe]
+    needs: [test, dist, exe, dmg]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -215,7 +288,9 @@ jobs:
           ## 下載與安裝 / Download
 
           - **Windows 執行檔：** 下載 `TubeTran-*-windows-x64.zip`，解壓縮後執行 `TubeTran.exe`（桌面模式）。加上 `--server` 則是伺服器模式。第一次執行時在右上角設定面板輸入 Claude API 金鑰。程式沒有數位簽章，Windows SmartScreen 可能會警告。
+          - **macOS App（Apple 晶片）：** 下載 `TubeTran-*-macos-arm64.dmg`，開啟後把 TubeTran 拖進「應用程式」。沒有 Intel 版。程式沒有簽章也沒有公證，第一次開啟時 macOS 會擋下：請在「應用程式」裡對 TubeTran 按右鍵 →「打開」，或到「系統設定 → 隱私權與安全性」按「仍要打開」；也可以執行 `xattr -dr com.apple.quarantine /Applications/TubeTran.app`。
           - **Python 套件（PyPI）：** `uv tool install --python 3.12 "tubetran[desktop]"`，之後執行 `tubetran`。要加 `--python 3.12`，否則在較新的 Python 上會因語音辨識套件尚無對應版本而安裝失敗。
+          - **macOS app (Apple silicon):** download `TubeTran-*-macos-arm64.dmg`, open it, and drag TubeTran into Applications. There is no Intel build. The app is neither signed nor notarized, so macOS blocks it the first time: in Applications, right-click TubeTran → Open, or go to System Settings → Privacy & Security and click "Open Anyway"; or run `xattr -dr com.apple.quarantine /Applications/TubeTran.app`.
           - **Windows executable:** download `TubeTran-*-windows-x64.zip`, extract it, and run `TubeTran.exe` (desktop mode); add `--server` for server mode. On first run, enter your Claude API key in the settings panel at the top right. The program is not code-signed, so Windows SmartScreen may warn.
           - **Python package (PyPI):** `uv tool install --python 3.12 "tubetran[desktop]"`, then run `tubetran`. Keep `--python 3.12`: on newer Pythons the install fails because the speech-recognition package has no matching wheels yet.
 

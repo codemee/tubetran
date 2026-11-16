@@ -45,7 +45,7 @@ Both modes share the same backend and frontend. In desktop mode the backend is a
 
 ## Setup & run
 
-Requires [uv](https://docs.astral.sh/uv/). Python is limited to 3.12–3.13 (newer versions may lack prebuilt wheels for some dependencies). Developed and tested mainly on Windows 11; it also runs on macOS (from source or `uv tool install`; there is no prebuilt app yet).
+Requires [uv](https://docs.astral.sh/uv/). Python is limited to 3.12–3.13 (newer versions may lack prebuilt wheels for some dependencies). Developed and tested mainly on Windows 11; it also runs on macOS (a prebuilt app is available for Apple silicon, or run from source / `uv tool install`).
 
 ### Download the Windows executable (easiest)
 
@@ -54,6 +54,12 @@ Download `TubeTran-vX.Y.Z-windows-x64.zip` from [Releases](https://github.com/co
 > The executable is not code-signed, so Windows SmartScreen may warn; choose "More info → Run anyway".
 >
 > If the desktop window doesn't open and you see an error such as `Failed to resolve Python.Runtime.Loader.Initialize` (versions up to 0.1.1 can do this), Windows has marked the downloaded files as blocked. Right-click the ZIP → Properties → tick "Unblock", then extract it again; or run `Get-ChildItem "TubeTran folder" -Recurse | Unblock-File` in PowerShell. Newer versions clear this mark automatically on startup. Each version's ZIP is built automatically by GitHub Actions and contains the same code as that version on PyPI.
+
+### Download the macOS app (Apple silicon)
+
+Go to [Releases](https://github.com/codemee/tubetran/releases), download `TubeTran-vX.Y.Z-macos-arm64.dmg`, open it, and drag TubeTran into Applications. Only the Apple silicon (M-series) build is provided; there is no Intel build.
+
+> The app is neither signed nor notarized, so macOS blocks it the first time. In Applications, right-click TubeTran → Open, or go to System Settings → Privacy & Security and click "Open Anyway"; or run `xattr -dr com.apple.quarantine /Applications/TubeTran.app`.
 
 ### Install from PyPI with `uv tool install`
 
@@ -151,6 +157,17 @@ The result is `packaging/dist/TubeTran/TubeTran.exe` (a folder build; distribute
 
 The packaged program runs in desktop mode by default, and `--server` switches to server mode; when started from a terminal, its output is shown in that terminal.
 
+### Packaging (macOS)
+
+On macOS the same spec also produces an app bundle:
+
+```bash
+uv sync --extra desktop
+uv run pyinstaller packaging/TubeTran.spec --noconfirm --clean --distpath packaging/dist --workpath packaging/build
+```
+
+The result is `packaging/dist/TubeTran.app` (about 200 MB); its icon is `packaging/TubeTran.icns`. `TubeTran.app/Contents/MacOS/TubeTran --selftest` checks that every dependency was bundled correctly. For a DMG, put the app and a symlink to `/Applications` in one folder, then run `hdiutil create -volname TubeTran -srcfolder <folder> -format UDZO TubeTran.dmg` (see the `dmg` job in `release.yml` for what CI does).
+
 ## Project layout
 
 ```
@@ -178,7 +195,7 @@ On Windows, when you stop a `--reload` server, end its child processes too (`tas
 
 ### Releasing a new version
 
-Releasing is fully automatic: after you push a `v*` tag, [GitHub Actions](https://github.com/codemee/tubetran/blob/main/.github/workflows/release.yml) runs the tests, builds the Python package and **publishes it to PyPI**, packages `TubeTran.exe` on Windows and compresses it into a **ZIP**, then creates a GitHub Release with those files attached.
+Releasing is fully automatic: after you push a `v*` tag, [GitHub Actions](https://github.com/codemee/tubetran/blob/main/.github/workflows/release.yml) runs the tests, builds the Python package and **publishes it to PyPI**, packages `TubeTran.exe` on Windows and compresses it into a **ZIP**, packages the app on macOS (Apple silicon) into a **DMG**, then creates a GitHub Release with those files attached.
 
 ```powershell
 # 1. Change `version` in pyproject.toml, update the lock file and commit

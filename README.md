@@ -45,7 +45,7 @@
 
 ## 安裝與執行
 
-需要 [uv](https://docs.astral.sh/uv/)。Python 版本限定 3.12–3.13（較新的版本可能缺少部分依賴的預編譯套件）。主要在 Windows 11 上開發與測試；macOS 也可以執行（從原始碼或 `uv tool install`，尚無預先打包的 App）。
+需要 [uv](https://docs.astral.sh/uv/)。Python 版本限定 3.12–3.13（較新的版本可能缺少部分依賴的預編譯套件）。主要在 Windows 11 上開發與測試；macOS 也可以執行（Apple 晶片可下載預先打包的 App，或從原始碼、`uv tool install` 執行）。
 
 ### 下載 Windows 執行檔（最簡單）
 
@@ -54,6 +54,12 @@
 > 執行檔沒有數位簽章，Windows SmartScreen 可能會警告；選「其他資訊 → 仍要執行」。
 >
 > 如果桌面視窗打不開、出現 `Failed to resolve Python.Runtime.Loader.Initialize` 之類的錯誤（0.1.1 以前的版本會遇到），是因為 Windows 把從網路下載的檔案標記成「已封鎖」。請對 ZIP 檔按右鍵 →「內容」→ 勾選「解除封鎖」，再重新解壓縮；或在 PowerShell 執行 `Get-ChildItem "TubeTran 資料夾" -Recurse | Unblock-File`。新版程式啟動時會自動清除這個標記。每個版本的 ZIP 由 GitHub Actions 自動建置，內容與 PyPI 上同一版本相同。
+
+### 下載 macOS App（Apple 晶片）
+
+到 [Releases](https://github.com/codemee/tubetran/releases) 下載 `TubeTran-vX.Y.Z-macos-arm64.dmg`，開啟後把 TubeTran 拖進「應用程式」。只提供 Apple 晶片（M 系列）版，沒有 Intel 版。
+
+> App 沒有簽章也沒有公證，第一次開啟時 macOS 會擋下。請在「應用程式」裡對 TubeTran 按右鍵 →「打開」，或到「系統設定 → 隱私權與安全性」按「仍要打開」；也可以執行 `xattr -dr com.apple.quarantine /Applications/TubeTran.app`。
 
 ### 用 `uv tool install` 從 PyPI 安裝
 
@@ -151,6 +157,17 @@ uv run pyinstaller packaging/TubeTran.spec --noconfirm --clean --distpath packag
 
 打包後的程式：直接執行是桌面模式，`--server` 為伺服器模式；從終端機執行時，輸出會顯示在該終端機。
 
+### 打包（macOS）
+
+同一份 spec 在 macOS 上會多產生一個 App：
+
+```bash
+uv sync --extra desktop
+uv run pyinstaller packaging/TubeTran.spec --noconfirm --clean --distpath packaging/dist --workpath packaging/build
+```
+
+成品是 `packaging/dist/TubeTran.app`（約 200 MB），圖示是 `packaging/TubeTran.icns`。`TubeTran.app/Contents/MacOS/TubeTran --selftest` 可檢查依賴是否都被正確打包。要做成 DMG：把 App 與指向 `/Applications` 的捷徑放進同一個資料夾，再用 `hdiutil create -volname TubeTran -srcfolder <資料夾> -format UDZO TubeTran.dmg`（CI 的做法見 `release.yml` 的 `dmg` 工作）。
+
 ## 專案結構
 
 ```
@@ -178,7 +195,7 @@ uv run pytest
 
 ### 發布新版本
 
-發布是全自動的：推送 `v*` 標籤後，[GitHub Actions](https://github.com/codemee/tubetran/blob/main/.github/workflows/release.yml) 會依序執行測試、建置 Python 套件並**發布到 PyPI**、在 Windows 上打包 `TubeTran.exe` 並壓成 **ZIP**、建立 GitHub Release 並附上這些檔案。
+發布是全自動的：推送 `v*` 標籤後，[GitHub Actions](https://github.com/codemee/tubetran/blob/main/.github/workflows/release.yml) 會依序執行測試、建置 Python 套件並**發布到 PyPI**、在 Windows 上打包 `TubeTran.exe` 並壓成 **ZIP**、在 macOS（Apple 晶片）上打包 App 並封裝成 **DMG**、建立 GitHub Release 並附上這些檔案。
 
 ```powershell
 # 1. 修改 pyproject.toml 的 version，更新鎖定檔並提交
