@@ -136,6 +136,7 @@ function renderList() {
   $("transcript-title").textContent = n < segs.length
     ? t("tx_title_partial", { n, total: segs.length }) : t("tx_title", { total: segs.length });
   current = -1;
+  listCur = -1; // 清單重畫過：重新標示目前這句
   $("overlay").innerHTML = "";
   tick(); // 立刻補回目前這一句，避免更新時字幕閃一下
   if (videoId) {
@@ -146,28 +147,91 @@ function renderList() {
 
 $("list").addEventListener("click", (e) => {
   const row = e.target.closest(".row");
-  if (row && player) player.seekTo(segs[+row.dataset.i].start, true);
+  if (row && player) {
+    player.seekTo(segs[+row.dataset.i].start, true);
+    follow = true; // 點了某一句：跳過去並恢復跟隨（那一句就在畫面上，不需要捲動）
+    syncFollowButton();
+  }
 });
 
 document.querySelectorAll("input[name=mode]").forEach((r) =>
   r.addEventListener("change", () => { mode = r.value; renderList(); })
 );
 
+// ── 字幕清單跟著播放位置：標示正在播放的那一句，並捲到它 ──
+// listCur：清單上標示的那一句＝「最近開始的一句」（兩句之間的空檔也維持標示，不會時有時無）。
+// follow：自動捲動中。使用者自己捲動瀏覽時暫停（否則每換一句就被拉回去），出現「回到目前字幕」；
+//         點那個按鈕、點任一句跳播、展開清單、或自己捲回目前這句，就恢復跟隨。
+let listCur = -1, follow = true, autoScrollUntil = 0;
+
+function lastStarted(pos) {
+  let lo = 0, hi = segs.length - 1, ans = -1;
+  while (lo <= hi) { // segs 依開始時間排序：二分搜尋最後一個 start <= pos 的
+    const mid = (lo + hi) >> 1;
+    if (segs[mid].start <= pos) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  return ans;
+}
+
+const curRow = () => (listCur >= 0 ? document.querySelector(`.row[data-i="${listCur}"]`) : null);
+
+function rowInView(row) {
+  const box = $("list");
+  return row.offsetTop >= box.scrollTop && row.offsetTop + row.offsetHeight <= box.scrollTop + box.clientHeight;
+}
+
+// 捲到目前這句（放在清單中間）。只捲清單本身，不捲動整個頁面
+function scrollToCurrent(smooth = true) {
+  const row = curRow();
+  if (!row || !$("transcript").open) return;
+  const box = $("list");
+  // 接下來的 scroll 事件是我們自己造成的，不算使用者捲動：到捲動結束（scrollend）或最多 1.5 秒為止
+  autoScrollUntil = Date.now() + 1500;
+  box.scrollTo({ top: row.offsetTop - box.clientHeight / 2 + row.offsetHeight / 2, behavior: smooth ? "smooth" : "auto" });
+}
+
+function syncFollowButton() {
+  const row = curRow();
+  $("follow").hidden = follow || !row || !$("transcript").open;
+}
+
+function markListRow() {
+  document.querySelector(".row.on")?.classList.remove("on");
+  curRow()?.classList.add("on");
+  if (follow) scrollToCurrent();
+  syncFollowButton();
+}
+
+function setFollow(on, smooth = true) {
+  follow = on;
+  if (on) scrollToCurrent(smooth);
+  syncFollowButton();
+}
+
+$("list").addEventListener("scrollend", () => { autoScrollUntil = 0; });
+// 使用者動手（滾輪、觸控、按住捲軸、鍵盤）：立刻算是使用者捲動，即使自動捲動還沒結束
+for (const ev of ["wheel", "touchstart", "pointerdown", "keydown"]) {
+  $("list").addEventListener(ev, () => { autoScrollUntil = 0; }, { passive: true });
+}
+$("list").addEventListener("scroll", () => {
+  if (Date.now() < autoScrollUntil) return; // 自動捲動中（平滑捲動要一點時間）
+  const row = curRow();
+  if (!row) return; // 還沒開始播第一句：沒有要跟隨的對象
+  follow = rowInView(row); // 使用者捲離目前這句就暫停跟隨；自己捲回來就恢復
+  syncFollowButton();
+});
+$("follow").addEventListener("click", () => setFollow(true));
+// 展開清單時立刻跳到目前這句（不要停在開頭）
+$("transcript").addEventListener("toggle", () => { if ($("transcript").open) setFollow(true, false); else syncFollowButton(); });
+
 function tick() {
   if (!player || !player.getCurrentTime || !segs.length) return;
   const pos = player.getCurrentTime();
+  const li = lastStarted(pos);
+  if (li !== listCur) { listCur = li; markListRow(); }
   const i = segs.findIndex((s) => pos >= s.start && pos < s.end);
   if (i === current) return;
   current = i;
-  document.querySelector(".row.on")?.classList.remove("on");
-  if (i < 0) { $("overlay").innerHTML = ""; return; }
-  const row = document.querySelector(`.row[data-i="${i}"]`);
-  row?.classList.add("on");
-  // 只在清單展開時，於清單容器內捲動（不要捲動整個頁面）
-  if (row && $("transcript").open) {
-    const box = $("list");
-    box.scrollTo({ top: row.offsetTop - box.clientHeight / 2 + row.clientHeight / 2, behavior: "smooth" });
-  }
   showOverlay();
 }
 setInterval(tick, 200);
@@ -490,7 +554,8 @@ async function pollJob(id, my) {
 }
 
 function resetView() {
-  segs = []; videoId = null; current = -1; partialShown = false;
+  segs = []; videoId = null; current = -1; listCur = -1; follow = true; partialShown = false;
+  $("follow").hidden = true;
   setTitle("", "");
   $("list").innerHTML = ""; $("overlay").innerHTML = "";
   $("bar").hidden = true; $("transcript").hidden = true;

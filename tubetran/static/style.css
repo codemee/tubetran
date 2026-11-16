@@ -346,6 +346,15 @@ body {
 .row:hover { background: var(--surface-2); }
 .row.on { background: var(--hl); border-left-color: var(--primary); }
 .row small { display: block; color: var(--muted); font-size: 12px; }
+.row.on small { color: var(--primary); font-weight: 700; } /* 正在播放的這句：時間也標出來，一眼就找得到 */
+/* 手動捲動瀏覽時暫停跟隨，右下角出現「回到目前字幕」 */
+#transcript { position: relative; }
+#follow {
+  position: absolute; right: 16px; bottom: 12px; z-index: 1; padding: 6px 12px; border-radius: 999px;
+  border: 0; background: var(--primary); color: var(--on-primary); font-size: 13px; font-weight: 600;
+  cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
+}
+#follow[hidden] { display: none; }
 .row .t { color: var(--accent); }
 
 /* ── 右側影片庫 ── */

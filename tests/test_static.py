@@ -40,3 +40,15 @@ def test_fullscreen_button_matches_youtubes_transparent_white_line_style():
 def test_subtitles_sit_low():
     rule = _rule(_css(), "#overlay")
     assert re.search(r"bottom:\s*max\(30px,\s*5%\)", rule)        # 視窗化至少 30px，全螢幕約 5%
+
+
+def test_transcript_follows_playback_and_can_return_to_current_line():
+    """字幕清單跟著播放位置：展開時立刻跳到目前這句；手動捲走時暫停跟隨，提供「回到目前字幕」。"""
+    html = (config.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert re.search(r'<details id="transcript"[^>]*>.*<button id="follow"[^>]*data-i18n="follow_now"', html, re.S)
+    i18n = (config.STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
+    assert i18n.count("follow_now:") == 2  # 中英文都有
+    js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    assert '$("transcript").addEventListener("toggle"' in js  # 展開時跳到目前這句（回歸：原本一直停在開頭）
+    assert "function lastStarted" in js                      # 兩句之間的空檔也維持標示
+    assert _rule(_css(), ".row.on small")                    # 正在播放的那句連時間也標出來
