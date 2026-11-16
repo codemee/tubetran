@@ -22,7 +22,7 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
 1. Fetch captions with `yt-dlp` (manual captions first, then auto-generated).
 2. If there are none: download the audio → transcribe locally with `faster-whisper`.
    (The Claude API does not accept audio input, so Whisper handles speech-to-text and Claude only translates.)
-3. Translate in batches to Traditional Chinese with the Claude API; misaligned or blank results are retried automatically, and a checkpoint is saved after every batch so an interrupted run resumes where it stopped.
+3. Translate in batches to Traditional Chinese with the Claude API; misaligned or blank results are retried automatically, and each translation must cover only its own source line (so text from later fragments is not pulled forward into the previous line), and a checkpoint is saved after every batch so an interrupted run resumes where it stopped.
 4. After translation, the subtitles are checked automatically and then saved to the cache.
 
 Results are cached in `cache/<video_id>/` inside the data folder, so the same video is never downloaded or billed twice.

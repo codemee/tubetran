@@ -1,6 +1,6 @@
 [project]
 name = "tubetran"
-version = "0.1.6"
+version = "0.1.7"
 description = "水管譯工 (TubeTran)：播放 YouTube 並顯示 Claude 翻譯的雙語字幕"
 readme = "README.md"
 license = "GPL-3.0-or-later"
