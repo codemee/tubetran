@@ -18,7 +18,10 @@ def parse_video_id(url: str) -> str | None:
 
 
 def parse_json3(data: dict) -> list[dict]:
-    """把 YouTube json3 字幕轉成 [{start, end, text}]，並去除空白與連續重複。"""
+    """把 YouTube json3 字幕轉成 [{start, end, text, words?}]，並去除空白與連續重複。
+
+    自動字幕的每個片段由好幾個字組成，各自帶時間（tOffsetMs）；保留在 words（[[秒, 字], …]），
+    重組成整句時用來決定句子從哪個時間開始。"""
     segments: list[dict] = []
     for ev in data.get("events", []):
         segs = ev.get("segs")
@@ -33,11 +36,22 @@ def parse_json3(data: dict) -> list[dict]:
         if segments and segments[-1]["text"] == text:
             segments[-1]["end"] = max(segments[-1]["end"], end)
             continue
-        segments.append({"start": start, "end": end, "text": text})
+        seg = {"start": start, "end": end, "text": text}
+        if len(segs) > 1:
+            words = []
+            for s in segs:
+                w = re.sub(r"\s+", " ", s.get("utf8", "")).strip()
+                if w:
+                    words.append([round((ev["tStartMs"] + s.get("tOffsetMs", 0)) / 1000, 3), w])
+            if len(words) > 1:
+                seg["words"] = words
+        segments.append(seg)
     # 避免相鄰字幕時間重疊（自動字幕常見）
     for cur, nxt in zip(segments, segments[1:]):
         if cur["end"] > nxt["start"]:
             cur["end"] = nxt["start"]
+            if "words" in cur:  # 逐字時間也不能超過新的結束時間
+                cur["words"] = [[min(t, cur["end"]), w] for t, w in cur["words"]]
     return [s for s in segments if s["end"] > s["start"]]
 
 

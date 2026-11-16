@@ -8,13 +8,21 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
 ## Features
 
 - Downloads YouTube captions first (manual captions in the video's own language preferred, then auto-generated; captions in other languages are ignored); when there are none, downloads the audio and transcribes it locally with Whisper.
-- Translates to Traditional Chinese (Taiwan usage) with the Claude API, including the video title.
-- Subtitles are overlaid on the video and stay visible in fullscreen; switch between bilingual / original / translation, and export SRT / VTT.
+- Translates to Traditional Chinese (Taiwan usage) with the Claude API, including the video title. Subtitles are shown one sentence at a time: auto-caption fragments that break mid-sentence are first regrouped into whole sentences before translation, so translations never drift out of alignment, and terms (such as namespace or cgroup) are translated consistently across the whole video.
+- Subtitles are overlaid on the video and stay visible in fullscreen; long subtitles are wrapped into two lines of similar length, breaking after punctuation where possible. Switch between bilingual / original / translation, and export SRT / VTT.
+- The subtitle list (below the player, expandable) follows playback: the line being played is highlighted and scrolled to the middle, and clicking any line jumps there. Scrolling through the list yourself pauses following; press "Back to current line" at the bottom right to return to the line being played.
 - Fullscreen: use the fullscreen button at the player's bottom right (next to the YouTube wordmark), or press `F`. In the desktop app `F` also works after you have clicked the video (in browser mode, click outside the video first so the page can receive `F`). The fullscreen button shows and hides together with YouTube's own controls: the desktop app detects whether the "YouTube" wordmark at the bottom right of the control bar is visible; a browser cannot, so there the button stays visible while the pointer is over the player.
 - Translated lines are usable while translation is still running; the rest continues in the background, with a clear progress bar.
 - A library on the right lists translated, in-progress and interrupted videos; click to watch again, delete the cache if you like (pressing ✕ on a video that is still processing cancels it and cleans up). The last playback position is remembered so you can pick up where you left off. Each item, and the title under the player, has an "Open on YouTube" link for comments and related videos (the desktop app opens it in your default browser).
 - Search and tags in the library: search titles (original and translated) and tags; add tags to any video (the "+ Tag" button on the item, press Enter to add), then click tags in the bar above the list to filter. Multiple tags can be selected (a video must have all of them), and filtering combines with search. The bar always starts with "Untagged", which lists only the videos that have no tags yet (it is mutually exclusive with the regular tags); with many tags the bar shows a single row, and "More +N" at its end expands the rest, while "Clear filters" stays fixed on the right.
-- Subtitle check: merges duplicates, fixes timing, and fills in blank translations (runs once automatically after translation, and can be re-run from the button next to each library item).
+- Buttons on each library item (shown when you hover over it):
+
+  | Button | What it does |
+  |---|---|
+  | ↗ Open on YouTube | Go back to YouTube for comments and related videos |
+  | ↻ Reprocess | Discard the current translation, fetch captions again and retranslate sentence by sentence (calls Claude again); watch progress and tags are kept. Use it to convert videos translated by older versions to one sentence per subtitle |
+  | ☑ Check subtitles | Merge duplicates, fix timing, fill in blank translations (also runs once automatically after translation) |
+  | ✕ Delete | Delete the cache; for a video still being processed, cancel it and clean up |
 - Light and dark themes, and Traditional Chinese / English interface. Both are three-state buttons: auto (follow the system, the default) → manual choices.
 
 ## How it works
@@ -22,8 +30,17 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
 1. Fetch captions with `yt-dlp` (manual captions in the video's language first, then auto-generated).
 2. If there are none: download the audio → transcribe locally with `faster-whisper`.
    (The Claude API does not accept audio input, so Whisper handles speech-to-text and Claude only translates.)
-3. Translate in batches to Traditional Chinese with the Claude API; misaligned or blank results are retried automatically, and each translation must cover only its own source line (so text from later fragments is not pulled forward into the previous line), and a checkpoint is saved after every batch so an interrupted run resumes where it stopped.
-4. After translation, the subtitles are checked automatically and then saved to the cache.
+3. Regroup caption fragments that break mid-sentence into whole sentences (overly long sentences are split at a comma).
+4. Read the whole video once to build a glossary that fixes one translation for each term.
+5. Translate in batches to Traditional Chinese with the Claude API; every batch carries the glossary and a few neighbouring sentences for context, and misaligned or blank results are retried automatically. A checkpoint is saved after every batch so an interrupted run resumes where it stopped.
+6. After translation, the subtitles are checked automatically and then saved to the cache.
+
+```
+Caption fragments (split by speech rhythm)       One sentence per subtitle (translated and shown)
+  8:54  carefully sharing a folder across mount    8:52  When Docker says volume mount, that is carefully
+  8:56  views. When Docker says memory limit,  ──▶        sharing a folder across mount views.
+  8:58  that is a Cgroup. When a container has     8:57  When Docker says memory limit, that is a Cgroup.
+```
 
 Results are cached in `cache/<video_id>/` inside the data folder, so the same video is never downloaded or billed twice.
 
@@ -142,7 +159,7 @@ Contents:
 | --- | --- |
 | `settings.json` | Settings saved by the settings panel: API key (plain text), translation model, STT model |
 | `.env` | (Optional, legacy) read-only; if present, the lowest-priority source of settings |
-| `cache/<video_id>/` | Per-video cache: `subs.json` (raw subtitles), `translated.json` (final result), `trans_partial.json` (translation checkpoint, removed when finished), `progress.json` (playback position), `tags.json` (tags; up to 10, 20 characters each), `audio.*` (audio, when there were no captions), `translated.pre-check.json` (backup taken before a manual check) |
+| `cache/<video_id>/` | Per-video cache: `subs.json` (subtitles: raw fragments and regrouped sentences), `glossary.json` (glossary), `translated.json` (final result), `trans_partial.json` (translation checkpoint, removed when finished), `progress.json` (playback position), `tags.json` (tags; up to 10, 20 characters each), `audio.*` (audio, when there were no captions), `translated.pre-check.json` (backup taken before a manual check) |
 | `webview/` | The desktop app's browser data (theme and language settings, cookies); excluded by `.gitignore` |
 | `tubetran.log` | Output log when there is no console (for example when launched by double-click) |
 
@@ -180,8 +197,8 @@ tubetran/
   settings.py       Settings panel storage, key masking, model lists
   main.py           FastAPI routes and static files
   jobs.py           Background jobs, cache, library, playback progress
-  services/         subtitles, transcribe (Whisper), translate, review (check), export (SRT/VTT)
-  static/           Frontend (no build step): index.html, app.js, settings.js, desktop.js, i18n.js, style.css, logo/
+  services/         subtitles, sentences (regroup fragments into sentences), transcribe (Whisper), translate (incl. glossary), review (check), export (SRT/VTT)
+  static/           Frontend (no build step): index.html, app.js, settings.js, desktop.js, i18n.js, linebreak.js (subtitle wrapping), style.css, logo/
 packaging/          PyInstaller configuration and launcher (launch.py)
 tests/              pytest
 ```
@@ -218,7 +235,7 @@ git push origin main v0.2.0
 ## Notes
 
 - The interface language only affects on-screen text; subtitles and titles are always translated into Traditional Chinese.
-- English sentences are often split into fragments, and Chinese word order differs, so a few fragments are not translated literally; the text still reads coherently when followed continuously.
+- Videos translated by older versions are still one fragment per subtitle and may have misaligned translations; press ↻ Reprocess in the library to switch them to one sentence per subtitle (this calls Claude again).
 - The no-captions flow (download audio → Whisper) has so far only been verified to the point that the libraries load; it has not yet been run end to end on a real video.
 - Translation calls the Claude API and costs money; the cache avoids paying twice, but reprocessing or deleting the cache and watching again translates it again.
 - YouTube changes often; if downloads fail, update with `uv lock --upgrade-package yt-dlp && uv sync`. `yt-dlp` may warn that no JavaScript runtime (`deno`) was found; this currently does not affect caption or audio downloads, and if downloads do fail you can install it (`scoop install deno`).

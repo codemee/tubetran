@@ -136,6 +136,7 @@ function renderList() {
   $("transcript-title").textContent = n < segs.length
     ? t("tx_title_partial", { n, total: segs.length }) : t("tx_title", { total: segs.length });
   current = -1;
+  listCur = -1; // 清單重畫過：重新標示目前這句
   $("overlay").innerHTML = "";
   tick(); // 立刻補回目前這一句，避免更新時字幕閃一下
   if (videoId) {
@@ -146,31 +147,115 @@ function renderList() {
 
 $("list").addEventListener("click", (e) => {
   const row = e.target.closest(".row");
-  if (row && player) player.seekTo(segs[+row.dataset.i].start, true);
+  if (row && player) {
+    player.seekTo(segs[+row.dataset.i].start, true);
+    follow = true; // 點了某一句：跳過去並恢復跟隨（那一句就在畫面上，不需要捲動）
+    syncFollowButton();
+  }
 });
 
 document.querySelectorAll("input[name=mode]").forEach((r) =>
   r.addEventListener("change", () => { mode = r.value; renderList(); })
 );
 
+// ── 字幕清單跟著播放位置：標示正在播放的那一句，並捲到它 ──
+// listCur：清單上標示的那一句＝「最近開始的一句」（兩句之間的空檔也維持標示，不會時有時無）。
+// follow：自動捲動中。使用者自己捲動瀏覽時暫停（否則每換一句就被拉回去），出現「回到目前字幕」；
+//         點那個按鈕、點任一句跳播、展開清單、或自己捲回目前這句，就恢復跟隨。
+let listCur = -1, follow = true, autoScrollUntil = 0;
+
+function lastStarted(pos) {
+  let lo = 0, hi = segs.length - 1, ans = -1;
+  while (lo <= hi) { // segs 依開始時間排序：二分搜尋最後一個 start <= pos 的
+    const mid = (lo + hi) >> 1;
+    if (segs[mid].start <= pos) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  return ans;
+}
+
+const curRow = () => (listCur >= 0 ? document.querySelector(`.row[data-i="${listCur}"]`) : null);
+
+function rowInView(row) {
+  const box = $("list");
+  return row.offsetTop >= box.scrollTop && row.offsetTop + row.offsetHeight <= box.scrollTop + box.clientHeight;
+}
+
+// 捲到目前這句（放在清單中間）。只捲清單本身，不捲動整個頁面
+function scrollToCurrent(smooth = true) {
+  const row = curRow();
+  if (!row || !$("transcript").open) return;
+  const box = $("list");
+  // 接下來的 scroll 事件是我們自己造成的，不算使用者捲動：到捲動結束（scrollend）或最多 1.5 秒為止
+  autoScrollUntil = Date.now() + 1500;
+  box.scrollTo({ top: row.offsetTop - box.clientHeight / 2 + row.offsetHeight / 2, behavior: smooth ? "smooth" : "auto" });
+}
+
+function syncFollowButton() {
+  const row = curRow();
+  $("follow").hidden = follow || !row || !$("transcript").open;
+}
+
+function markListRow() {
+  document.querySelector(".row.on")?.classList.remove("on");
+  curRow()?.classList.add("on");
+  if (follow) scrollToCurrent();
+  syncFollowButton();
+}
+
+function setFollow(on, smooth = true) {
+  follow = on;
+  if (on) scrollToCurrent(smooth);
+  syncFollowButton();
+}
+
+$("list").addEventListener("scrollend", () => { autoScrollUntil = 0; });
+// 使用者動手（滾輪、觸控、按住捲軸、鍵盤）：立刻算是使用者捲動，即使自動捲動還沒結束
+for (const ev of ["wheel", "touchstart", "pointerdown", "keydown"]) {
+  $("list").addEventListener(ev, () => { autoScrollUntil = 0; }, { passive: true });
+}
+$("list").addEventListener("scroll", () => {
+  if (Date.now() < autoScrollUntil) return; // 自動捲動中（平滑捲動要一點時間）
+  const row = curRow();
+  if (!row) return; // 還沒開始播第一句：沒有要跟隨的對象
+  follow = rowInView(row); // 使用者捲離目前這句就暫停跟隨；自己捲回來就恢復
+  syncFollowButton();
+});
+$("follow").addEventListener("click", () => setFollow(true));
+// 展開清單時立刻跳到目前這句（不要停在開頭）
+$("transcript").addEventListener("toggle", () => { if ($("transcript").open) setFollow(true, false); else syncFollowButton(); });
+
 function tick() {
   if (!player || !player.getCurrentTime || !segs.length) return;
   const pos = player.getCurrentTime();
+  const li = lastStarted(pos);
+  if (li !== listCur) { listCur = li; markListRow(); }
   const i = segs.findIndex((s) => pos >= s.start && pos < s.end);
   if (i === current) return;
   current = i;
-  document.querySelector(".row.on")?.classList.remove("on");
-  if (i < 0) { $("overlay").innerHTML = ""; return; }
-  const row = document.querySelector(`.row[data-i="${i}"]`);
-  row?.classList.add("on");
-  // 只在清單展開時，於清單容器內捲動（不要捲動整個頁面）
-  if (row && $("transcript").open) {
-    const box = $("list");
-    box.scrollTo({ top: row.offsetTop - box.clientHeight / 2 + row.clientHeight / 2, behavior: "smooth" });
-  }
-  $("overlay").innerHTML = lines(segs[i]);
+  showOverlay();
 }
 setInterval(tick, 200);
+
+// 影片上的字幕：太長時由 splitLines（linebreak.js）決定換行位置，各行長度接近、盡量斷在標點後，
+// 不會變成「第一行很長、第二行只有一兩個字」。寬度用 canvas 依實際字型量。
+const measureCtx = document.createElement("canvas").getContext("2d");
+function showOverlay() {
+  const box = $("overlay");
+  box.innerHTML = current >= 0 && segs[current] ? lines(segs[current]) : "";
+  for (const d of box.children) {
+    const cs = getComputedStyle(d);
+    const max = (box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) * 0.97;
+    measureCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const parts = splitLines(d.textContent, max, (s) => measureCtx.measureText(s).width);
+    if (parts.length > 1) d.innerHTML = parts.map(esc).join("<br>");
+  }
+}
+// 播放區大小改變（縮放視窗、全螢幕）時，依新的寬度重新折行
+let overlayW = 0;
+if (window.ResizeObserver) new ResizeObserver(() => {
+  const w = $("overlay").clientWidth;
+  if (w !== overlayW) { overlayW = w; showOverlay(); }
+}).observe($("overlay"));
 
 // ── 全螢幕：讓「播放器＋字幕層」整個容器全螢幕（YouTube 原生全螢幕只會全螢幕 iframe）──
 // 有些環境（macOS 的 WKWebView）沒有元素全螢幕功能，requestFullscreen 不存在或被拒絕；
@@ -469,7 +554,8 @@ async function pollJob(id, my) {
 }
 
 function resetView() {
-  segs = []; videoId = null; current = -1; partialShown = false;
+  segs = []; videoId = null; current = -1; listCur = -1; follow = true; partialShown = false;
+  $("follow").hidden = true;
   setTitle("", "");
   $("list").innerHTML = ""; $("overlay").innerHTML = "";
   $("bar").hidden = true; $("transcript").hidden = true;
@@ -745,7 +831,8 @@ function libraryHtml(list) {
           : `<div class="name">${esc(v.title)}</div>`}
         <div class="state" hidden></div>
       </div>
-      <a class="yt${v.status === "done" ? " r3" : ""}" data-ext target="_blank" rel="noopener noreferrer" href="${ytUrl(v.video_id)}" title="${esc(t("yt_open_tip"))}" aria-label="${esc(t("yt_open"))}">${EXT_ICON}</a>
+      <a class="yt${v.status === "done" ? " r4" : ""}" data-ext target="_blank" rel="noopener noreferrer" href="${ytUrl(v.video_id)}" title="${esc(t("yt_open_tip"))}" aria-label="${esc(t("yt_open"))}">${EXT_ICON}</a>
+      ${v.status === "done" ? `<button class="redo" type="button" data-redo="${v.video_id}" title="${esc(t("redo"))}" aria-label="${esc(t("redo"))}">${REDO_ICON}</button>` : ""}
       ${v.status === "done" ? `<button class="chk" type="button" data-chk="${v.video_id}" title="${esc(t("chk"))}" aria-label="${esc(t("chk"))}">${CHECK_ICON}</button>` : ""}
       <button class="del" type="button" data-del="${v.video_id}" title="${esc(t("del"))}" aria-label="${esc(t("del"))}">✕</button>
     </div>`).join("");
@@ -756,6 +843,25 @@ const EXT_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 
 // 單色向量圖示（currentColor）：清單加勾
 const CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M4 12h6M4 17h9"/><path d="M14 15l2.6 2.6L21 12.5"/></svg>`;
+
+// 單色向量圖示（currentColor）：重新處理（循環箭頭）
+const REDO_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>`;
+
+// ── 重新處理：丟掉目前的翻譯，重新取得字幕並以整句重新翻譯（會呼叫 Claude，所以先確認） ──
+async function reprocessVideo(id) {
+  const v = library.find((x) => x.video_id === id);
+  const name = v ? (v.title_trans || v.title) : id;
+  if (!confirm(t("confirm_redo", { name }))) return;
+  try {
+    const res = await fetch(`/api/library/${id}/reprocess`, { method: "POST" });
+    if (!res.ok) throw new Error((await res.json()).detail);
+  } catch (err) {
+    setStatus(() => serverMsg(err.message), true);
+    if (/ANTHROPIC_API_KEY/.test(err.message)) window.openSettings?.(true);
+    return;
+  }
+  openUrl(id); // 切到這支影片，顯示處理進度；翻好的部分會先出現
+}
 
 // ── 字幕檢查：合併重複、修正時序（後端以本機規則處理，不呼叫 Claude） ──
 function reviewSummary(r) {
@@ -894,6 +1000,8 @@ $("library").addEventListener("click", (e) => {
   if (del) { e.stopPropagation(); deleteVideo(del.dataset.del); return; }
   const chk = e.target.closest("[data-chk]");
   if (chk) { e.stopPropagation(); checkVideo(chk.dataset.chk, chk); return; }
+  const redo = e.target.closest("[data-redo]");
+  if (redo) { e.stopPropagation(); reprocessVideo(redo.dataset.redo); return; }
   const item = e.target.closest(".item");
   if (item && item.dataset.id !== videoId) openUrl(item.dataset.id);
 });

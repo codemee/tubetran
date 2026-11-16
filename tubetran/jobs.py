@@ -7,7 +7,7 @@ import time
 from dataclasses import asdict, dataclass
 
 from tubetran import config
-from tubetran.services import review, subtitles, transcribe, translate
+from tubetran.services import review, sentences, subtitles, transcribe, translate
 
 
 @dataclass
@@ -74,6 +74,7 @@ def load_subtitles(video_id: str) -> dict | None:
         data = json.loads(subs_path(video_id).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    data.pop("fragments", None)  # 原始片段只在重新處理時用，不必送到前端
     cp = translate.load_checkpoint(checkpoint_path(video_id))
     segs, n = [], 0
     for i, s in enumerate(data["segments"]):
@@ -152,9 +153,26 @@ def _run(job: Job):
                 if not segs:
                     raise RuntimeError("語音辨識沒有產生任何內容")
                 data.update(lang=lang, segments=segs, via="whisper")
+        if data.get("unit") != "sentence":
+            # 片段重組成整句再翻譯（逐段翻譯會連鎖錯位，見 services/sentences.py）。
+            # 舊版留下、翻到一半的 subs.json 也在這裡轉換；它的檢查點是逐段的，對不上的句子會重新翻譯。
+            # 分句前先清理片段：自動字幕常有重複的行，不先合併就會被併進同一句（變成「A A B」）
+            frags, pre = review.review_segments(data.get("fragments") or data.get("segments") or [])
+            data = sentences.to_sentences({**data, "fragments": frags})
+            if pre["merged"] or pre["dropped"]:  # 記下來，翻譯完成時一併提示使用者
+                data["pre_review"] = {"merged": pre["merged"], "dropped": pre["dropped"]}
             _write_json(subs_file, data)
+        data.pop("fragments", None)  # 原始片段留在 subs.json（重新處理時用），翻譯結果不需要
         job.done, job.total = 0, len(data["segments"])
         _set(job, "translating")
+        # 術語表：先讀完整支影片整理一次，之後每批都帶上，用詞才會前後一致。存起來，中斷後續翻時沿用
+        gfile = cache / "glossary.json"
+        glossary = _read_json(gfile) if gfile.exists() else None
+        if not isinstance(glossary, dict):
+            glossary = translate.make_glossary(data["segments"], data["lang"], data["title"])
+            check()
+            _write_json(gfile, glossary)
+        data["glossary"] = glossary
         checkpoint = cache / "trans_partial.json"
 
         def on_translate(done: int, total: int):
@@ -168,13 +186,16 @@ def _run(job: Job):
             data["title"],
             on_progress=on_translate,
             checkpoint=checkpoint,
+            glossary=glossary,
         )
         # 翻譯完成後自動檢查一輪：修正重複與時序錯亂（本機規則，不呼叫 API）
         data["segments"], report = review.review_segments(data["segments"])
+        for k, n in (data.pop("pre_review", None) or {}).items():  # 分句前清理片段時的修正
+            report[k] += n
         if review.changed(report):
             data["review"] = report  # 只在真的修正過時記錄，前端才會提示
         try:  # 標題翻譯失敗不影響整體結果
-            data["title_trans"] = translate.translate_title(data["title"], data["lang"])
+            data["title_trans"] = translate.translate_title(data["title"], data["lang"], glossary=glossary)
         except Exception:  # noqa: BLE001
             data["title_trans"] = ""
         data["video_id"] = vid
@@ -366,7 +387,8 @@ def check_video(video_id: str) -> dict | None:
         report["repaired"] = 0
         if report["untranslated"]:  # 有空白譯文：呼叫 Claude 補翻（只翻缺的那幾句）
             try:
-                segs, n = translate.repair_missing(segs, data.get("lang", ""), data.get("title", ""))
+                segs, n = translate.repair_missing(segs, data.get("lang", ""), data.get("title", ""),
+                                                   glossary=data.get("glossary"))
                 report["repaired"] = n
                 report["untranslated"] = sum(1 for s in segs if not (s.get("trans") or "").strip())
                 did_change = did_change or n > 0
@@ -435,6 +457,37 @@ def delete_video(video_id: str) -> str:
         _jobs.pop(video_id, None)
     shutil.rmtree(config.CACHE_DIR / video_id, ignore_errors=True)
     return "deleted"
+
+
+def reprocess_video(video_id: str) -> Job | str | None:
+    """丟掉翻譯結果，重新取得字幕、重組成整句、重新翻譯。保留播放進度與標籤。
+
+    - 字幕來自 YouTube（人工／自動）：刪掉 subs.json 重新抓（免費，而且能拿到逐字時間）。
+    - 字幕來自 Whisper：保留辨識結果（重跑很慢），只用原始片段重新分句。
+    回傳新的 Job；找不到這支影片回傳 None；正在處理中回傳 "busy"。"""
+    if not VIDEO_ID_RE.fullmatch(video_id):
+        raise ValueError("不合法的影片 ID")
+    with _lock:
+        job = _jobs.get(video_id)
+        if job and job.status == "running":
+            return "busy"
+        if not (result_path(video_id).exists() or subs_path(video_id).exists()):
+            return None
+        with _rw_lock:  # 不要和「檢查」、背景補翻標題同時改檔
+            subs = _read_json(subs_path(video_id)) if subs_path(video_id).exists() else None
+            if subs and subs.get("via") == "whisper":
+                subs["segments"] = subs.get("fragments") or subs.get("segments") or []
+                subs.pop("fragments", None)
+                subs.pop("unit", None)
+                _write_json(subs_path(video_id), subs)
+            else:
+                subs_path(video_id).unlink(missing_ok=True)
+            for p in (result_path(video_id), checkpoint_path(video_id),
+                      result_path(video_id).with_name("translated.pre-check.json"),
+                      result_path(video_id).with_name("glossary.json")):
+                p.unlink(missing_ok=True)
+        _jobs.pop(video_id, None)
+    return start_job(video_id)
 
 
 def job_dict(job: Job) -> dict:
