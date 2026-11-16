@@ -8,22 +8,38 @@
 ## 功能
 
 - 優先下載 YouTube 字幕（影片語言的人工字幕優先，其次自動字幕；他語的翻譯字幕不採用）；沒有字幕時，下載音檔並用本機 Whisper 辨識。
-- 以 Claude API 翻譯成繁體中文（台灣用語），影片標題也一併翻譯。
-- 字幕疊在影片上，全螢幕時也看得到；可切換雙語／原文／譯文，並匯出 SRT／VTT。
+- 以 Claude API 翻譯成繁體中文（台灣用語），影片標題也一併翻譯。字幕以「一句一則」呈現：自動字幕原本斷在句子中間的片段，會先重組成完整的句子再翻譯，譯文不會錯位；整支影片的術語（例如 namespace、cgroup）前後譯法一致。
+- 字幕疊在影片上，全螢幕時也看得到；太長的字幕會自動折成長度接近的兩行，盡量斷在標點之後。可切換雙語／原文／譯文，並匯出 SRT／VTT。
 - 全螢幕：按播放器右下角（YouTube 字樣旁）的全螢幕鈕，或按 `F`。桌面版點過影片之後按 `F` 也有效（瀏覽器模式要先點一下影片外面，才收得到 `F`）。全螢幕鈕會跟著 YouTube 的控制列一起顯示與隱藏：桌面版直接偵測控制列右下角的「YouTube」字樣在不在；瀏覽器模式偵測不到，滑鼠在播放區內就一直顯示。
 - 翻譯到一半就能先使用已翻好的部分，其餘在背景繼續；處理進度以明顯的進度條呈現。
 - 右側影片庫：列出已翻譯、翻譯中、中斷的影片，點擊即可重看，可刪除快取（處理中的影片按 ✕ 會取消處理並清除）；記錄上次播放位置，下次接著看。每個項目與播放器標題下方都有「在 YouTube 開啟」連結，方便回到 YouTube 看留言、相關影片（桌面版會用系統預設瀏覽器開啟）。
 - 影片庫的搜尋與標籤：可搜尋標題（原文與譯名）與標籤；每支影片可加標籤（項目上的「＋ 標籤」，按 Enter 新增），清單上方的標籤列點一下即可篩選，可複選（需同時符合），並可與搜尋一起使用。標籤列最前面固定有「無標籤」，點了只列出還沒加標籤的影片（和一般標籤互斥）；標籤很多時只顯示一行，最後面的「更多 +N」可展開全部，「清除篩選」固定在右側。
-- 字幕檢查：合併重複、修正時序、補翻空白譯文（翻譯完成後自動跑一次，也可在清單項目旁手動重跑）。
+- 影片庫項目上的按鈕（滑鼠移到項目上才出現）：
+
+  | 按鈕 | 作用 |
+  |---|---|
+  | ↗ 在 YouTube 開啟 | 回到 YouTube 看留言、相關影片 |
+  | ↻ 重新處理 | 丟掉目前的翻譯，重新取得字幕並以整句重新翻譯（會再呼叫 Claude）；觀看進度與標籤保留。舊版翻譯的影片可以用它改成一句一則 |
+  | ☑ 檢查字幕 | 合併重複、修正時序、補翻空白譯文（翻譯完成後也會自動跑一次） |
+  | ✕ 刪除 | 刪除快取；處理中的影片則是取消處理並清除 |
 - 淺色／深色主題，以及繁體中文／English 介面。兩者都是三態按鈕：自動（跟隨系統，預設）→ 手動切換。
 
 ## 運作流程
 
-1. 。
+1. 用 `yt-dlp` 取得字幕（影片語言的人工字幕優先，其次自動字幕）。
 2. 若沒有字幕：下載音檔 → 本機 `faster-whisper` 語音辨識。
    （Claude API 不接受音檔輸入，因此語音轉文字由 Whisper 負責，Claude 只負責翻譯。）
-3. 以 Claude API 分批翻譯成繁體中文，句數不對齊或譯文空白時自動重試，並要求每句譯文只對應該句原文（避免後面片段的內容被提前翻進前一句）；每批翻完就存檢查點，中斷後可從上次的位置接著翻。
-4. 翻譯完成後自動檢查字幕，再存入快取。
+3. 把斷在句子中間的字幕片段重組成完整的句子（太長的句子在逗號處切開）。
+4. 讀完整支影片整理術語表，決定專有名詞的統一譯法。
+5. 以 Claude API 分批翻譯成繁體中文；每批都附上術語表與前後幾句當參考，句數不對齊或譯文空白時自動重試。每批翻完就存檢查點，中斷後可從上次的位置接著翻。
+6. 翻譯完成後自動檢查字幕，再存入快取。
+
+```
+字幕片段（自動字幕依說話節奏斷行）            一句一則（翻譯與顯示的單位）
+  8:54  carefully sharing a folder across mount    8:52  When Docker says volume mount, that is carefully
+  8:56  views. When Docker says memory limit,  ──▶        sharing a folder across mount views.
+  8:58  that is a Cgroup. When a container has     8:57  When Docker says memory limit, that is a Cgroup.
+```
 
 結果快取在資料資料夾的 `cache/<video_id>/`，同一支影片不會重複下載或重複付費。
 
@@ -142,7 +158,7 @@ uv run python -m tubetran --help          # 查看所有參數
 | --- | --- |
 | `settings.json` | 設定面板儲存的設定：API 金鑰（明文）、翻譯模型、STT 模型 |
 | `.env` | （選用，舊式）只讀；有的話作為最低優先順序的設定來源 |
-| `cache/<video_id>/` | 每支影片的快取：`subs.json`（原始字幕）、`translated.json`（最終結果）、`trans_partial.json`（翻譯檢查點，完成後刪除）、`progress.json`（播放位置）、`tags.json`（標籤，最多 10 個、每個 20 字）、`audio.*`（無字幕時的音檔）、`translated.pre-check.json`（手動檢查前的備份） |
+| `cache/<video_id>/` | 每支影片的快取：`subs.json`（字幕：原始片段與重組後的整句）、`glossary.json`（術語表）、`translated.json`（最終結果）、`trans_partial.json`（翻譯檢查點，完成後刪除）、`progress.json`（播放位置）、`tags.json`（標籤，最多 10 個、每個 20 字）、`audio.*`（無字幕時的音檔）、`translated.pre-check.json`（手動檢查前的備份） |
 | `webview/` | 桌面版的瀏覽器資料（主題與語言設定、cookie），已被 `.gitignore` 排除 |
 | `tubetran.log` | 沒有主控台時（例如雙擊啟動）的輸出記錄 |
 
@@ -180,8 +196,8 @@ tubetran/
   settings.py       設定面板的儲存、金鑰遮罩、模型清單
   main.py           FastAPI 路由與靜態檔
   jobs.py           背景任務、快取、影片庫、播放進度
-  services/         subtitles（字幕）、transcribe（Whisper）、translate（翻譯）、review（檢查）、export（SRT/VTT）
-  static/           前端（無建置步驟）：index.html、app.js、settings.js、desktop.js、i18n.js、style.css、logo/
+  services/         subtitles（字幕）、sentences（片段重組成整句）、transcribe（Whisper）、translate（翻譯、術語表）、review（檢查）、export（SRT/VTT）
+  static/           前端（無建置步驟）：index.html、app.js、settings.js、desktop.js、i18n.js、linebreak.js（字幕折行）、style.css、logo/
 packaging/          PyInstaller 設定與啟動入口（launch.py）
 tests/              pytest
 ```
@@ -218,7 +234,7 @@ git push origin main v0.2.0
 ## 注意事項
 
 - 介面語言只影響畫面文字；字幕與標題一律翻譯成繁體中文。
-- 英文句子常被斷成片段，中文語序不同，所以少數片段的譯文不是字面對應，連續閱讀時語意仍然連貫。
+- 舊版翻譯的影片仍是「一段一則」，可能有譯文錯位；在影片庫按 ↻ 重新處理即可改成一句一則（會重新呼叫 Claude）。
 - 無字幕影片的流程（下載音檔 → Whisper 辨識）目前只驗證過程式庫能載入，尚未用真實影片完整跑過。
 - 翻譯會呼叫 Claude API 並產生費用；快取可避免重複付費，但「重新處理」或刪除快取後再看會重新翻譯。
 - YouTube 常變動，若下載失敗請更新：`uv lock --upgrade-package yt-dlp && uv sync`。`yt-dlp` 可能提示找不到 JavaScript runtime（`deno`），目前不影響字幕與音檔下載；若遇到下載失敗可安裝它（`scoop install deno`）。

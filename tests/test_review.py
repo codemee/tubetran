@@ -134,7 +134,7 @@ def test_check_endpoint_repairs_blank_translations(client, tmp_path, monkeypatch
     vid = "aaaaaaaaaaa"
     _write_result(tmp_path, vid, [seg(0, 2, "I did this"), seg(2, 4, "of last year.", ""), seg(4, 6, "Anyway")])
 
-    def fake_repair(segs, lang, title="", client=None):
+    def fake_repair(segs, lang, title="", client=None, glossary=None):
         out = [dict(s) for s in segs]
         out[1]["trans"] = "去年的事"
         return out, 1
@@ -172,6 +172,7 @@ def test_check_endpoint_errors(client, tmp_path):
 
 def test_pipeline_auto_reviews_after_translation(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CACHE_DIR", tmp_path)
+    # 重複的片段要在分句「之前」合併，否則會被併進同一句（"Hello there Hello there"）
     dup = [
         {"start": 0, "end": 2, "text": "Hello there"},
         {"start": 1.5, "end": 3, "text": "Hello there"},
@@ -182,9 +183,13 @@ def test_pipeline_auto_reviews_after_translation(tmp_path, monkeypatch):
     monkeypatch.setattr(jobs.translate, "translate_segments",
                         lambda segs, *a, **k: [{**s, "trans": "譯:" + s["text"]} for s in segs])
     monkeypatch.setattr(jobs.translate, "translate_title", lambda *a, **k: "標題")
+    monkeypatch.setattr(jobs.translate, "make_glossary", lambda *a, **k: {})
     job = jobs.Job("aaaaaaaaaaa")
     jobs._run(job)
     assert job.status == "done", job.error
     data = jobs.load_result("aaaaaaaaaaa")
-    assert [s["text"] for s in data["segments"]] == ["Hello there", "Bye now"]
-    assert data["review"]["merged"] == 1
+    assert [s["text"] for s in data["segments"]] == ["Hello there Bye now"]  # 沒有句尾標點：接成一句
+    assert data["review"]["merged"] == 1  # 分句前合併的重複也要提示
+    assert "fragments" not in data and "pre_review" not in data  # 只留在 subs.json
+    subs = json.loads((tmp_path / "aaaaaaaaaaa" / "subs.json").read_text(encoding="utf-8"))
+    assert subs["unit"] == "sentence" and len(subs["fragments"]) == 2

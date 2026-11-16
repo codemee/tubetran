@@ -442,28 +442,28 @@ body {
 }
 .item .resume[hidden] { display: none; }
 .item .resume i { display: block; height: 100%; border-radius: 3px; background: #f00; transition: width .4s; }
-/* 「檢查」「刪除」按鈕：疊在縮圖右上角，只有滑鼠移到卡片上（或鍵盤聚焦）時才出現。
+/* 「在 YouTube 開啟」「重新處理」「檢查」「刪除」按鈕：疊在縮圖右上角，只有滑鼠移到卡片上（或鍵盤聚焦）時才出現。
    不用 :focus-within——點過卡片後卡片會保有焦點，按鈕就會一直顯示。 */
-.item .del, .item .chk, .item .yt {
+.item .del, .item .chk, .item .redo, .item .yt {
   position: absolute; top: 14px; z-index: 2; width: 26px; height: 26px; border-radius: 7px;
   border: 0; background: rgba(0, 0, 0, .62); color: #fff; cursor: pointer;
   display: grid; place-items: center; opacity: 0; transition: opacity .15s, background .15s;
 }
 .item .yt { right: 46px; text-decoration: none; } /* 在 YouTube 開啟：沒有「檢查」鈕時（尚未完成）緊鄰刪除鈕 */
-.item .yt.r3 { right: 78px; }
+.item .yt.r4 { right: 110px; } /* 已完成：右邊依序是重新處理、檢查、刪除 */
 .item.cancelling .yt { right: 14px; } /* 取消中沒有刪除鈕，靠右對齊 */
 .item .del { right: 14px; font-size: 14px; line-height: 1; }
 .item .chk { right: 46px; }
-.item .chk svg, .item .yt svg { width: 16px; height: 16px; }
-.item:hover .del, .item:hover .chk, .item:hover .yt,
-.item:focus-visible .del, .item:focus-visible .chk, .item:focus-visible .yt,
-.item .del:focus-visible, .item .chk:focus-visible, .item .yt:focus-visible, .item .chk.busy { opacity: 1; }
-.item .yt:hover { background: var(--primary); color: var(--on-primary); }
-.item .chk:hover { background: var(--primary); color: var(--on-primary); }
+.item .redo { right: 78px; }
+.item .chk svg, .item .redo svg, .item .yt svg { width: 16px; height: 16px; }
+.item:hover .del, .item:hover .chk, .item:hover .redo, .item:hover .yt,
+.item:focus-visible .del, .item:focus-visible .chk, .item:focus-visible .redo, .item:focus-visible .yt,
+.item .del:focus-visible, .item .chk:focus-visible, .item .redo:focus-visible, .item .yt:focus-visible, .item .chk.busy { opacity: 1; }
+.item .yt:hover, .item .chk:hover, .item .redo:hover { background: var(--primary); color: var(--on-primary); }
 .item .del:hover { background: var(--danger); color: #fff; }
 .item .chk.busy { pointer-events: none; }
 .item .chk.busy svg { animation: spin .8s linear infinite; }
-@media (hover: none) { .item .chk, .item .del, .item .yt { opacity: 1; } } /* 觸控裝置沒有 hover，維持常駐 */
+@media (hover: none) { .item .chk, .item .redo, .item .del, .item .yt { opacity: 1; } } /* 觸控裝置沒有 hover，維持常駐 */
 
 /* 翻譯進行中的句子：譯文尚未產生 */
 .pending { opacity: .6; font-style: italic; }

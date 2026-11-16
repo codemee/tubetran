@@ -172,6 +172,7 @@ def _fake_pipeline(monkeypatch, translate_fn):
     )
     monkeypatch.setattr(jobs.translate, "translate_segments", translate_fn)
     monkeypatch.setattr(jobs.translate, "translate_title", lambda *a, **k: "標題")
+    monkeypatch.setattr(jobs.translate, "make_glossary", lambda *a, **k: {"cgroup": "cgroup"})
 
 
 def _wait(cond, timeout=5.0):
@@ -189,7 +190,7 @@ def test_cancel_running_job_cleans_up_cache_and_job(client, tmp_path, monkeypatc
 
     started, release = threading.Event(), threading.Event()
 
-    def slow_translate(segments, lang, title="", client=None, on_progress=None, checkpoint=None):
+    def slow_translate(segments, lang, title="", client=None, on_progress=None, checkpoint=None, glossary=None):
         started.set()
         release.wait(5)
         on_progress(1, len(segments))  # 每批翻完會呼叫：被取消的話這裡會丟出 Cancelled
@@ -211,7 +212,7 @@ def test_cancel_after_translation_does_not_leave_result(client, tmp_path, monkey
 
     gate = threading.Event()
 
-    def translate_then_wait(segments, lang, title="", client=None, on_progress=None, checkpoint=None):
+    def translate_then_wait(segments, lang, title="", client=None, on_progress=None, checkpoint=None, glossary=None):
         gate.wait(5)  # 翻譯「已經完成」，只差最後寫結果
         return [{**s, "trans": "譯"} for s in segments]
 
@@ -228,7 +229,7 @@ def test_cancel_after_translation_does_not_leave_result(client, tmp_path, monkey
 def test_delete_after_job_finished_is_a_plain_delete(client, tmp_path, monkeypatch):
     _fake_pipeline(
         monkeypatch,
-        lambda segments, lang, title="", client=None, on_progress=None, checkpoint=None:
+        lambda segments, lang, title="", client=None, on_progress=None, checkpoint=None, glossary=None:
             [{**s, "trans": "譯"} for s in segments],
     )
     vid = "ccccccccccc"
@@ -236,6 +237,90 @@ def test_delete_after_job_finished_is_a_plain_delete(client, tmp_path, monkeypat
     assert _wait(lambda: (jobs.get_job(vid) and jobs.get_job(vid).status == "done"))
     assert client.delete(f"/api/library/{vid}").status_code == 200
     assert not (tmp_path / vid).exists()
+
+
+def _make_done_with_subs(tmp_path, vid, via):
+    """已完成的影片：translated.json、subs.json（舊版逐段格式）、檢查備份、進度與標籤。"""
+    _make(tmp_path, vid, "x", 1000)
+    d = tmp_path / vid
+    frags = [{"start": 0.0, "end": 1.0, "text": "Hello"}, {"start": 1.0, "end": 2.0, "text": "world."}]
+    (d / "subs.json").write_text(json.dumps({"title": "x", "lang": "en", "via": via, "segments": frags}), encoding="utf-8")
+    (d / "translated.pre-check.json").write_text("{}", encoding="utf-8")
+    (d / "progress.json").write_text(json.dumps({"position": 100, "duration": 600}), encoding="utf-8")
+    (d / "tags.json").write_text(json.dumps(["教學"], ensure_ascii=False), encoding="utf-8")
+    (d / "glossary.json").write_text(json.dumps({"舊": "術語"}, ensure_ascii=False), encoding="utf-8")
+    return d
+
+
+def test_reprocess_refetches_captions_and_keeps_progress_and_tags(client, tmp_path, monkeypatch):
+    fetched = []
+    _fake_pipeline(monkeypatch, lambda segments, lang, title="", client=None, on_progress=None, checkpoint=None, glossary=None:
+                   [{**s, "trans": "譯"} for s in segments])
+    real_fetch = jobs.subtitles.fetch_subtitles
+    monkeypatch.setattr(jobs.subtitles, "fetch_subtitles", lambda vid: fetched.append(vid) or real_fetch(vid))
+    vid = "aaaaaaaaaaa"
+    d = _make_done_with_subs(tmp_path, vid, "auto")
+
+    r = client.post(f"/api/library/{vid}/reprocess")
+    assert r.status_code == 200 and r.json()["status"] == "running"
+    assert _wait(lambda: jobs.get_job(vid).status == "done"), jobs.get_job(vid).error
+    assert fetched == [vid]  # YouTube 字幕：重新抓（能拿到逐字時間）
+    data = jobs.load_result(vid)
+    assert [s["text"] for s in data["segments"]] == ["line 0 line 1 line 2"]  # 新抓的字幕重組成整句
+    assert json.loads((d / "subs.json").read_text(encoding="utf-8"))["unit"] == "sentence"
+    assert not (d / "translated.pre-check.json").exists()
+    assert data["glossary"] == {"cgroup": "cgroup"}  # 術語表也重新整理（舊的不沿用）
+    assert jobs.load_progress(vid)["position"] == 100 and jobs.load_tags(vid) == ["教學"]
+
+
+def test_glossary_is_made_once_saved_and_reused_on_resume(client, tmp_path, monkeypatch):
+    calls, seen = [], []
+    _fake_pipeline(monkeypatch, lambda segments, lang, title="", client=None, on_progress=None, checkpoint=None,
+                   glossary=None: seen.append(glossary) or [{**s, "trans": "譯"} for s in segments])
+    monkeypatch.setattr(jobs.translate, "make_glossary", lambda *a, **k: calls.append(1) or {"cgroup": "cgroup"})
+    vid = "aaaaaaaaaaa"
+    jobs.start_job(vid)
+    assert _wait(lambda: jobs.get_job(vid).status == "done"), jobs.get_job(vid).error
+    assert calls == [1] and seen == [{"cgroup": "cgroup"}]  # 整理一次，翻譯時帶上
+    assert json.loads((tmp_path / vid / "glossary.json").read_text(encoding="utf-8")) == {"cgroup": "cgroup"}
+    assert jobs.load_result(vid)["glossary"] == {"cgroup": "cgroup"}  # 「檢查」補翻時要用
+    # 模擬中斷後續翻：術語表沿用存下來的，不再呼叫
+    jobs.result_path(vid).unlink()
+    jobs._jobs.clear()
+    jobs.start_job(vid)
+    assert _wait(lambda: jobs.get_job(vid).status == "done")
+    assert calls == [1]
+
+
+def test_reprocess_whisper_keeps_recognition_and_regroups(client, tmp_path, monkeypatch):
+    _fake_pipeline(monkeypatch, lambda segments, lang, title="", client=None, on_progress=None, checkpoint=None, glossary=None:
+                   [{**s, "trans": "譯"} for s in segments])
+    monkeypatch.setattr(jobs.subtitles, "fetch_subtitles", lambda vid: (_ for _ in ()).throw(AssertionError("不應重抓")))
+    monkeypatch.setattr(jobs.transcribe, "download_audio", lambda *a: (_ for _ in ()).throw(AssertionError("不應重新辨識")))
+    vid = "bbbbbbbbbbb"
+    _make_done_with_subs(tmp_path, vid, "whisper")
+
+    assert client.post(f"/api/library/{vid}/reprocess").status_code == 200
+    assert _wait(lambda: jobs.get_job(vid).status == "done"), jobs.get_job(vid).error
+    assert [s["text"] for s in jobs.load_result(vid)["segments"]] == ["Hello world."]
+
+
+def test_reprocess_refuses_without_key_busy_or_missing(client, tmp_path, monkeypatch):
+    vid = "aaaaaaaaaaa"
+    d = _make_done_with_subs(tmp_path, vid, "auto")
+    # 沒有金鑰：不能先把舊翻譯刪掉
+    with monkeypatch.context() as m:
+        m.setattr(config, "get_api_key", lambda: (_ for _ in ()).throw(RuntimeError("尚未設定 ANTHROPIC_API_KEY")))
+        assert client.post(f"/api/library/{vid}/reprocess").status_code == 400
+    assert (d / "translated.json").exists() and (d / "subs.json").exists()
+    # 處理中：409，檔案不動
+    jobs._jobs[vid] = jobs.Job(vid)
+    assert client.post(f"/api/library/{vid}/reprocess").status_code == 409
+    assert (d / "translated.json").exists()
+    jobs._jobs.clear()
+    # 找不到影片、ID 不合法
+    assert client.post("/api/library/ccccccccccc/reprocess").status_code == 404
+    assert client.post("/api/library/short/reprocess").status_code == 400
 
 
 def test_normalize_tags():

@@ -168,9 +168,30 @@ function tick() {
     const box = $("list");
     box.scrollTo({ top: row.offsetTop - box.clientHeight / 2 + row.clientHeight / 2, behavior: "smooth" });
   }
-  $("overlay").innerHTML = lines(segs[i]);
+  showOverlay();
 }
 setInterval(tick, 200);
+
+// 影片上的字幕：太長時由 splitLines（linebreak.js）決定換行位置，各行長度接近、盡量斷在標點後，
+// 不會變成「第一行很長、第二行只有一兩個字」。寬度用 canvas 依實際字型量。
+const measureCtx = document.createElement("canvas").getContext("2d");
+function showOverlay() {
+  const box = $("overlay");
+  box.innerHTML = current >= 0 && segs[current] ? lines(segs[current]) : "";
+  for (const d of box.children) {
+    const cs = getComputedStyle(d);
+    const max = (box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) * 0.97;
+    measureCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const parts = splitLines(d.textContent, max, (s) => measureCtx.measureText(s).width);
+    if (parts.length > 1) d.innerHTML = parts.map(esc).join("<br>");
+  }
+}
+// 播放區大小改變（縮放視窗、全螢幕）時，依新的寬度重新折行
+let overlayW = 0;
+if (window.ResizeObserver) new ResizeObserver(() => {
+  const w = $("overlay").clientWidth;
+  if (w !== overlayW) { overlayW = w; showOverlay(); }
+}).observe($("overlay"));
 
 // ── 全螢幕：讓「播放器＋字幕層」整個容器全螢幕（YouTube 原生全螢幕只會全螢幕 iframe）──
 // 有些環境（macOS 的 WKWebView）沒有元素全螢幕功能，requestFullscreen 不存在或被拒絕；
@@ -745,7 +766,8 @@ function libraryHtml(list) {
           : `<div class="name">${esc(v.title)}</div>`}
         <div class="state" hidden></div>
       </div>
-      <a class="yt${v.status === "done" ? " r3" : ""}" data-ext target="_blank" rel="noopener noreferrer" href="${ytUrl(v.video_id)}" title="${esc(t("yt_open_tip"))}" aria-label="${esc(t("yt_open"))}">${EXT_ICON}</a>
+      <a class="yt${v.status === "done" ? " r4" : ""}" data-ext target="_blank" rel="noopener noreferrer" href="${ytUrl(v.video_id)}" title="${esc(t("yt_open_tip"))}" aria-label="${esc(t("yt_open"))}">${EXT_ICON}</a>
+      ${v.status === "done" ? `<button class="redo" type="button" data-redo="${v.video_id}" title="${esc(t("redo"))}" aria-label="${esc(t("redo"))}">${REDO_ICON}</button>` : ""}
       ${v.status === "done" ? `<button class="chk" type="button" data-chk="${v.video_id}" title="${esc(t("chk"))}" aria-label="${esc(t("chk"))}">${CHECK_ICON}</button>` : ""}
       <button class="del" type="button" data-del="${v.video_id}" title="${esc(t("del"))}" aria-label="${esc(t("del"))}">✕</button>
     </div>`).join("");
@@ -756,6 +778,25 @@ const EXT_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 
 // 單色向量圖示（currentColor）：清單加勾
 const CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M4 12h6M4 17h9"/><path d="M14 15l2.6 2.6L21 12.5"/></svg>`;
+
+// 單色向量圖示（currentColor）：重新處理（循環箭頭）
+const REDO_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>`;
+
+// ── 重新處理：丟掉目前的翻譯，重新取得字幕並以整句重新翻譯（會呼叫 Claude，所以先確認） ──
+async function reprocessVideo(id) {
+  const v = library.find((x) => x.video_id === id);
+  const name = v ? (v.title_trans || v.title) : id;
+  if (!confirm(t("confirm_redo", { name }))) return;
+  try {
+    const res = await fetch(`/api/library/${id}/reprocess`, { method: "POST" });
+    if (!res.ok) throw new Error((await res.json()).detail);
+  } catch (err) {
+    setStatus(() => serverMsg(err.message), true);
+    if (/ANTHROPIC_API_KEY/.test(err.message)) window.openSettings?.(true);
+    return;
+  }
+  openUrl(id); // 切到這支影片，顯示處理進度；翻好的部分會先出現
+}
 
 // ── 字幕檢查：合併重複、修正時序（後端以本機規則處理，不呼叫 Claude） ──
 function reviewSummary(r) {
@@ -894,6 +935,8 @@ $("library").addEventListener("click", (e) => {
   if (del) { e.stopPropagation(); deleteVideo(del.dataset.del); return; }
   const chk = e.target.closest("[data-chk]");
   if (chk) { e.stopPropagation(); checkVideo(chk.dataset.chk, chk); return; }
+  const redo = e.target.closest("[data-redo]");
+  if (redo) { e.stopPropagation(); reprocessVideo(redo.dataset.redo); return; }
   const item = e.target.closest(".item");
   if (item && item.dataset.id !== videoId) openUrl(item.dataset.id);
 });

@@ -100,6 +100,24 @@ def check_library_item(video_id: str):
     return report
 
 
+@app.post("/api/library/{video_id}/reprocess")
+def reprocess_library_item(video_id: str):
+    """丟掉翻譯結果重新處理（以整句重新翻譯）。先檢查金鑰：沒有金鑰就不要先把舊的翻譯刪掉。"""
+    try:
+        config.get_api_key()
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    try:
+        result = jobs.reprocess_video(video_id)
+    except ValueError:
+        raise HTTPException(400, "不合法的影片 ID")
+    if result is None:
+        raise HTTPException(404, "找不到這支影片")
+    if result == "busy":
+        raise HTTPException(409, "影片仍在處理中，請等它完成後再重新處理")
+    return jobs.job_dict(result)
+
+
 @app.get("/api/jobs/{video_id}")
 def job_status(video_id: str):
     job = jobs.get_job(video_id)
