@@ -32,6 +32,31 @@ const stageLabel = (s) => (I18N["zh-TW"]["stage_" + s] ? t("stage_" + s) : s);
   if (window.ResizeObserver) new ResizeObserver(syncScrollbarWidth).observe(ps);
 }
 
+// ── 網址列右緣對齊播放器右緣（寬版面）──
+// 寬版面時頂欄的網址列靠右，右緣要和下方播放器（.col-main）的右緣在同一條線上。播放器的位置會隨視窗寬度、
+// 內容區 1500px 的上限與捲軸變動，純 CSS 算不出來，所以量出來：先把網址列的右邊距歸零量出它能延伸到的右緣，
+// 再補上「到播放器右緣」差的那一段。窄版面（網址列換到第二行）由 CSS 的 --sbw 處理，這裡把行內樣式清掉。
+{
+  const form = $("form"), main = document.querySelector(".col-main");
+  const wide = matchMedia("(min-width: 961px)");
+  const alignForm = () => {
+    form.style.marginRight = "";
+    if (!wide.matches) return;
+    form.style.marginRight = "0px";
+    const gap = form.getBoundingClientRect().right - main.getBoundingClientRect().right;
+    form.style.marginRight = gap > 0 ? `${gap}px` : "";
+  };
+  alignForm();
+  wide.addEventListener("change", alignForm);
+  if (window.ResizeObserver) {
+    new ResizeObserver(alignForm).observe(document.querySelector(".page-scroll"));
+    new ResizeObserver(alignForm).observe(document.querySelector(".topbar"));
+  }
+  // 桌面版載入後才加上 custom-chrome（視窗按鈕出現、右內距改變）或最大化：頂欄大小不變，ResizeObserver 不會通知
+  new MutationObserver(alignForm).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  window.addEventListener("load", alignForm);
+}
+
 // ── 主題 ──
 // 三種模式：auto（預設，跟隨系統）／light／dark。auto 時不設定 data-theme，交給 CSS 的 prefers-color-scheme
 const root = document.documentElement;
@@ -515,14 +540,22 @@ async function loadLibrary() {
 
 // ── 搜尋與標籤篩選 ──
 // libQuery：搜尋文字（比對原標題、譯名、標籤）；libTags：選取中的標籤（忽略大小寫，需同時符合）
-let libQuery = "", editingId = null, focusEditor = false;
+// libUntagged：「無標籤」（只列出沒有任何標籤的影片），和一般標籤互斥——有標籤的影片不可能同時是無標籤
+let libQuery = "", editingId = null, focusEditor = false, libUntagged = false;
 const libTags = new Set();
 const tagKey = (s) => s.toLowerCase();
 const hasTag = (v, key) => (v.tags || []).some((x) => tagKey(x) === key);
+const isUntagged = (v) => !(v.tags || []).length;
+
+function toggleTagFilter(k) {
+  libUntagged = false;
+  libTags.has(k) ? libTags.delete(k) : libTags.add(k);
+}
 
 function filteredLibrary() {
   const q = libQuery.trim().toLowerCase();
   return library.filter((v) => {
+    if (libUntagged && !isUntagged(v)) return false;
     for (const k of libTags) if (!hasTag(v, k)) return false;
     if (!q) return true;
     return [v.title, v.title_trans, ...(v.tags || [])].some((s) => (s || "").toLowerCase().includes(q));
@@ -542,16 +575,65 @@ function allTags() {
 
 function renderTagFilter(tags) {
   for (const k of [...libTags]) if (!tags.some((x) => x.key === k)) libTags.delete(k); // 標籤已不存在就取消選取
-  const chips = tags.map((x) =>
-    `<button type="button" class="tagchip${libTags.has(x.key) ? " on" : ""}" data-tag="${esc(x.key)}" aria-pressed="${libTags.has(x.key)}" title="${esc(t("tag_filter_title", { tag: x.label }))}">${esc(x.label)} <small>${x.count}</small></button>`);
-  if (chips.length && (libTags.size || libQuery.trim())) {
-    chips.push(`<button type="button" class="tagchip clear" data-tagclear>${esc(t("tag_clear"))}</button>`);
-  }
+  const untagged = library.filter(isUntagged).length;
+  // 「無標籤」固定排在最前面（即使還沒有任何標籤、或數量是 0 也有）；選了就照實篩選，沒有符合的影片時清單就是空的，
+  // 不自動取消選取（否則點了沒反應）。要回到全部：再點一次，或按「清除篩選」
+  const chips = [
+    `<button type="button" class="tagchip untagged${libUntagged ? " on" : ""}" data-untagged aria-pressed="${libUntagged}" title="${esc(t("tag_untagged_title"))}">${esc(t("tag_untagged"))} <small>${untagged}</small></button>`,
+    ...tags.map((x) =>
+      `<button type="button" class="tagchip${libTags.has(x.key) ? " on" : ""}" data-tag="${esc(x.key)}" aria-pressed="${libTags.has(x.key)}" title="${esc(t("tag_filter_title", { tag: x.label }))}">${esc(x.label)} <small>${x.count}</small></button>`),
+  ];
   const html = chips.join("");
   const box = $("tag-filter");
   if (box.dataset.html !== html) { box.dataset.html = html; box.innerHTML = html; }
+  // 「清除篩選」在標籤列右側，固定不動（不在會捲動的標籤區裡）：有任何篩選條件時才出現
+  $("tag-clear").hidden = !(libTags.size || libUntagged || libQuery.trim());
+  syncTagToggle();
   $("tag-suggest").innerHTML = tags.map((x) => `<option value="${esc(x.label)}">`).join("");
 }
+
+// 標籤列平時收成一行：一行放不下的標籤先隱藏（.fold），最後面接一個「更多 +N」；點了展開全部，
+// 展開後最後面是「收合」。展開與否只是顯示偏好，記在瀏覽器（讀寫失敗就當收合）。
+let tagsOpen = false;
+try { tagsOpen = localStorage.getItem("tubetran.tagsOpen") === "1"; } catch (_) {}
+function syncTagToggle() {
+  const box = $("tag-filter"), bar = $("tag-bar");
+  bar.classList.toggle("open", tagsOpen);
+  // 內容、寬度、展開狀態、語言都沒變就不重算（影片庫每 2 秒更新一次，不要每次都動到按鈕）
+  const sig = [box.dataset.html, tagsOpen, $("tag-clear").hidden, bar.clientWidth, effLang()].join("|");
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  if (!tagsOpen) box.scrollTop = 0; // 展開時捲動過再收合：收合的那一行不能停在捲動後的位置（展開時則保留捲動位置）
+  const chips = [...box.querySelectorAll(".tagchip:not(.more)")];
+  box.querySelector(".more")?.remove();
+  for (const c of chips) c.classList.remove("fold");
+  if (!chips.length || box.scrollHeight <= 24) return; // 一行放得下：不需要按鈕（收合時 scrollHeight 仍是完整高度）
+
+  const more = document.createElement("button");
+  more.type = "button";
+  more.className = "tagchip more";
+  more.dataset.tagmore = "";
+  more.setAttribute("aria-expanded", String(tagsOpen));
+  more.title = t(tagsOpen ? "tag_less_title" : "tag_more_title");
+  box.appendChild(more);
+  if (tagsOpen) { more.textContent = t("tag_less"); return; }
+
+  // 收合：先收起掉到第二行以後的標籤，再從最後面一個一個收起，直到「更多 +N」也放得進第一行
+  const top = chips[0].getBoundingClientRect().top;
+  const onFirstRow = (el) => Math.abs(el.getBoundingClientRect().top - top) < 4;
+  let visible = chips.filter(onFirstRow).length;
+  chips.forEach((c, i) => c.classList.toggle("fold", i >= visible));
+  for (;;) {
+    more.textContent = t("tag_more", { n: chips.length - visible });
+    if (visible <= 1 || onFirstRow(more)) break;
+    chips[--visible].classList.add("fold");
+  }
+}
+// 側欄寬度改變（視窗縮放、換成窄版面）時，一行能放的標籤數跟著變
+if (window.ResizeObserver) new ResizeObserver(syncTagToggle).observe($("tag-bar"));
+$("tag-clear").addEventListener("click", () => {
+  libTags.clear(); libUntagged = false; libQuery = ""; $("lib-search").value = ""; renderLibrary();
+});
 
 function renderLibrary() {
   $("lib-tools").hidden = !library.length;
@@ -565,7 +647,7 @@ function renderLibrary() {
   const shown = filteredLibrary();
   // 只有清單結構改變時才整個重畫（避免縮圖閃爍、失去 hover／焦點）；進度只做局部更新
   const key = JSON.stringify([
-    videoId, editingId, [...libTags], // 選取中的標籤也要算：卡片上標籤的「選取」樣式會跟著變
+    videoId, editingId, [...libTags], libUntagged, // 選取中的標籤也要算：卡片上標籤的「選取」樣式會跟著變
     shown.map((v) => [v.video_id, v.status, v.stage === "cancelling", v.title, v.title_trans, v.tags]),
   ]);
   if (key !== libKey) {
@@ -778,11 +860,16 @@ async function deleteVideo(id) {
 
 // 篩選列：點標籤切換（可複選）、清除篩選、搜尋
 $("tag-filter").addEventListener("click", (e) => {
-  if (e.target.closest("[data-tagclear]")) { libTags.clear(); libQuery = ""; $("lib-search").value = ""; renderLibrary(); return; }
+  if (e.target.closest("[data-tagmore]")) {
+    tagsOpen = !tagsOpen;
+    try { localStorage.setItem("tubetran.tagsOpen", tagsOpen ? "1" : "0"); } catch (_) {}
+    syncTagToggle();
+    return;
+  }
+  if (e.target.closest("[data-untagged]")) { libUntagged = !libUntagged; libTags.clear(); renderLibrary(); return; }
   const chip = e.target.closest("[data-tag]");
   if (!chip) return;
-  const k = chip.dataset.tag;
-  libTags.has(k) ? libTags.delete(k) : libTags.add(k);
+  toggleTagFilter(chip.dataset.tag);
   renderLibrary();
 });
 $("lib-search").addEventListener("input", (e) => { libQuery = e.target.value; renderLibrary(); });
@@ -790,7 +877,7 @@ $("lib-search").addEventListener("input", (e) => { libQuery = e.target.value; re
 $("library").addEventListener("click", (e) => {
   // 標籤相關的點擊都不應該開啟影片
   const tag = e.target.closest("[data-tag]");
-  if (tag) { e.stopPropagation(); const k = tag.dataset.tag; libTags.has(k) ? libTags.delete(k) : libTags.add(k); renderLibrary(); return; }
+  if (tag) { e.stopPropagation(); toggleTagFilter(tag.dataset.tag); renderLibrary(); return; }
   const edit = e.target.closest("[data-tagedit]");
   if (edit) { e.stopPropagation(); editingId = edit.dataset.tagedit; focusEditor = true; renderLibrary(); return; }
   const tdel = e.target.closest("[data-tagdel]");

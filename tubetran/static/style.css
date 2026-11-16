@@ -173,7 +173,8 @@ body {
 .set-ver a:hover, .set-ver a:focus-visible { color: var(--primary); text-decoration: underline; }
 
 /* 網址輸入框與載入鈕：與圖示同風格——粗外框、大圓角；輸入框內留白，按鈕填色與外框不同色 */
-#form { flex: 1; display: flex; gap: 10px; max-width: 760px; margin: 0 auto; }
+/* 靠右：右緣由 app.js 量測後以行內的 margin-right 對齊下方播放器的右緣（窄版面見底部的 media 區塊） */
+#form { flex: 1; display: flex; gap: 10px; max-width: 760px; margin: 0 0 0 auto; }
 /* 高度與圖示、右側按鈕一致（38px） */
 #url {
   flex: 1; min-width: 0; height: 38px; padding: 0 20px; border-radius: 14px;
@@ -364,8 +365,16 @@ body {
   border: 1px solid var(--border); background: var(--surface); color: inherit;
 }
 #lib-search:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; border-color: var(--primary); }
-#tag-filter { display: flex; flex-wrap: wrap; gap: 6px; max-height: 92px; overflow-y: auto; }
-#tag-filter:empty { display: none; }
+/* 標籤列：平時只顯示一行（23px ≈ 一個標籤高 22.4px，第二行從 28.4px 才開始，所以會整行被裁掉）；
+   一行放不下的標籤先隱藏（.fold），由最後面的「更多 +N」展開；展開後最高約 4 行，再多就在區塊內捲動，
+   「收合」接在所有標籤的最後面。「清除篩選」在右側，固定不動。 */
+#tag-bar { display: flex; align-items: flex-start; gap: 6px; }
+#tag-filter { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; max-height: 23px; overflow: hidden; }
+#tag-bar.open #tag-filter { max-height: 120px; overflow-y: auto; }
+#tag-filter .tagchip.fold { display: none; }
+#tag-actions { flex: none; display: flex; align-items: center; height: 23px; }
+#tag-actions [hidden] { display: none; }
+.tagchip.more { border-style: dashed; background: transparent; }
 .tagchip {
   display: inline-flex; align-items: center; gap: 4px; padding: 0 9px; border-radius: 999px;
   font: inherit; font-size: 12px; line-height: 1.7; cursor: pointer;
