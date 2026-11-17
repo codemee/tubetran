@@ -139,3 +139,12 @@ def test_toolbar_buttons_are_icons_with_tooltips():
         body = area[area.index(tag) + len(tag):].split("</", 1)[0]
         assert "<svg" in body, bid
 
+
+
+def test_switching_videos_leaves_slide_mode():
+    """在投影片模式中切到其他影片（或刪除、重新處理目前這支）要退出投影片模式，新影片用正常的播放器。"""
+    js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    reset = js[js.index("function resetView()"):]
+    reset = reset[:reset.index("\n}\n")]
+    assert "slideMode = false" in reset and 'classList.remove("slides")' in reset
+    assert "player = null" in reset  # 沒有控制列、靜音的播放器拆掉，下一支影片重新建立正常的播放器

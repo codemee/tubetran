@@ -734,7 +734,17 @@ async function pollJob(id, my) {
 
 function resetView() {
   segs = []; videoId = null; current = -1; listCur = -1; follow = true; partialShown = false;
-  slideIdx = -1; // 換影片時仍維持投影片模式，字幕載入後從這支影片的位置開始
+  slideIdx = -1;
+  if (slideMode) {
+    // 換影片（或刪除、重新處理目前這支）：退出投影片模式。投影片模式的播放器沒有控制列、而且靜音，
+    // 直接拆掉；接著載入的影片會建立一個正常的播放器（有控制列、有聲音）。
+    // 不走 setSlideMode(false)：它會先替舊影片重建一次播放器，馬上又被換掉。
+    slideMode = false;
+    $("stage").classList.remove("slides");
+    $("slide-toggle").setAttribute("aria-pressed", "false");
+    try { player?.destroy(); } catch (_) {}
+    player = null;
+  }
   slides = { video_id: null, status: "none", ready: 0, total: 0, stamp: 0 };
   clearTimeout(slidePoll);
   $("slide-delete").hidden = true; $("slide-img").hidden = true;
