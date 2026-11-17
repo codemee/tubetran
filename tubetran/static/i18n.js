@@ -102,6 +102,9 @@ const I18N = {
     lib_stage: "{stage}…",
     lib_processing: "處理中",
     lib_paused: "已中斷於 {pct}%，點擊繼續翻譯",
+    lib_error: "翻譯失敗（已完成 {pct}%），點擊重試",
+    retry: "重試",
+    retry_tip: "重試：從中斷的地方接著處理，已翻好的句子不會重翻",
     seen: " · 看到 {time}",
     meta: "{via} · {count} 句 · {date}",
     confirm_cancel: "「{name}」還在處理中。\n要取消處理，並清除已取得的字幕、翻譯與音檔嗎？（已呼叫 Claude 翻譯的部分無法退費）",
@@ -211,6 +214,9 @@ const I18N = {
     lib_stage: "{stage}…",
     lib_processing: "Processing",
     lib_paused: "Interrupted at {pct}% — click to resume",
+    lib_error: "Translation failed ({pct}% done) — click to retry",
+    retry: "Retry",
+    retry_tip: "Retry: continue where it stopped; lines already translated are kept",
     seen: " · watched to {time}",
     meta: "{via} · {count} lines · {date}",
     confirm_cancel: "\"{name}\" is still being processed.\nCancel it and remove the subtitles, translations and audio fetched so far? (Claude calls already made are not refunded.)",
@@ -221,6 +227,17 @@ const I18N = {
 };
 
 // 後端回傳的錯誤訊息是中文；英文介面時對照翻譯，對不到的（多為 yt-dlp 等技術訊息）維持原文
+// 翻譯失敗的原因（translate.failure_reason）
+function failReasonEn(r) {
+  let m;
+  if ((m = /回覆超過 (\d+) 個 token/.exec(r))) return `the reply exceeded the ${m[1]}-token limit and was cut off`;
+  if (/模型拒絕翻譯/.test(r)) return "the model refused to translate this part";
+  if ((m = /模型沒有回傳文字（(.*)）/.exec(r))) return `the model returned no text (${m[1]})`;
+  if ((m = /回覆不是正確的 JSON（(.*)）/.exec(r))) return `the reply wasn't valid JSON (${m[1]})`;
+  if ((m = /回覆少了 (\d+) 句/.exec(r))) return `the reply was missing ${m[1]} lines`;
+  return r;
+}
+
 const SERVER_MSG_EN = [
   [/無法從網址解析/, "Couldn't find a YouTube video ID in that URL"],
   [/這支影片正在處理中/, "This video is still being processed — try deleting it later"],
@@ -241,6 +258,9 @@ const SERVER_MSG_EN = [
   [/無法寫入設定檔/, "Couldn't write the settings file (settings.json) — check the data folder's permissions"],
   [/語音辨識沒有產生任何內容/, "Speech recognition produced no text"],
   [/音檔下載失敗/, "Audio download failed"],
+  [/翻譯失敗：有 (\d+) 句在試了 (\d+) 次後仍未取得譯文(?:（最後一次：(.*)）)?/, (m) =>
+    `Translation failed: ${m[1]} lines were still untranslated after ${m[2]} attempts` +
+    (m[3] ? ` (last attempt: ${failReasonEn(m[3])})` : "")],
   [/翻譯失敗：有 (\d+) 句/, (m) => `Translation failed: ${m[1]} lines were still untranslated after retries`],
 ];
 

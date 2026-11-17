@@ -140,6 +140,26 @@ def test_toolbar_buttons_are_icons_with_tooltips():
         assert "<svg" in body, bid
 
 
+def test_fullscreen_button_hands_focus_back_to_the_player():
+    """回歸：按全螢幕鈕後焦點留在鈕上，← → 快轉倒轉沒有作用。要把焦點交還給播放器（投影片模式只取消焦點）。"""
+    js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    fn = js[js.index("function focusPlayer()"):]
+    fn = fn[:fn.index("\n}\n")]
+    assert "getIframe" in fn and "frame.focus()" in fn and "slideMode" in fn and "btn.blur()" in fn
+    assert 'setTimeout(focusPlayer, 0)' in js
+
+
+def test_failed_translation_can_be_retried():
+    """翻譯失敗時：狀態列下方有「重試」鈕；影片庫的卡片標成失敗、有重試鈕，滑過可看到原因。"""
+    html = (config.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert html.index('id="status"') < html.index('id="retry"') < html.index('id="bar"')
+    js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    assert 'v.status === "error" || v.status === "paused"' in js and "data-retry=" in js
+    assert 'v.status === "error" && v.error' in js  # tooltip 附上失敗原因
+    i18n = (config.STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
+    for key in ("lib_error:", "retry:", "retry_tip:"):
+        assert i18n.count(key) == 2, key
+
 
 def test_switching_videos_leaves_slide_mode():
     """在投影片模式中切到其他影片（或刪除、重新處理目前這支）要退出投影片模式，新影片用正常的播放器。"""

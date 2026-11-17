@@ -288,7 +288,18 @@ function toggleFullscreen() {
     if (r?.catch) r.catch(() => { if (canPseudo) setPseudoFs(true); });
   } else if (canPseudo) setPseudoFs(true);
 }
-$("fs").addEventListener("click", toggleFullscreen);
+// 按了全螢幕鈕後焦點會留在鈕上，← → 等 YouTube 的快速鍵就沒有作用：把焦點交還給播放器。
+// 投影片模式不交給播放器（← → 是我們自己的上一則／下一則），只讓鈕失去焦點。
+function focusPlayer() {
+  const btn = $("fs");
+  if (document.activeElement !== btn) return; // 使用者已經點了別的地方，不要搶焦點
+  const frame = !slideMode && player?.getIframe?.();
+  if (!frame) { btn.blur(); return; }
+  frame.focus();
+  try { frame.contentWindow.focus(); } catch (_) {}
+}
+$("fs").addEventListener("click", () => { toggleFullscreen(); setTimeout(focusPlayer, 0); });
+document.addEventListener("fullscreenchange", () => setTimeout(focusPlayer, 0)); // 進出全螢幕會重新排版，完成後再交一次
 // 桌面版（pywebview）：網頁全螢幕只會填滿視窗內容，要同步讓整個視窗全螢幕。瀏覽器裡沒有這個橋接，什麼都不會做
 document.addEventListener("fullscreenchange", () => {
   if (!pseudoFs) { try { window.pywebview?.api?.set_fullscreen(!!document.fullscreenElement); } catch (_) {} }
@@ -748,7 +759,7 @@ function resetView() {
   slides = { video_id: null, status: "none", ready: 0, total: 0, stamp: 0 };
   clearTimeout(slidePoll);
   $("slide-delete").hidden = true; $("slide-img").hidden = true;
-  $("follow").hidden = true;
+  $("follow").hidden = true; $("retry").hidden = true;
   setTitle("", "");
   $("list").innerHTML = ""; $("overlay").innerHTML = "";
   $("bar").hidden = true; $("transcript").hidden = true;
@@ -792,10 +803,18 @@ async function openUrl(url) {
     });
     loadLibrary();
   } catch (err) {
-    if (my === runId) { hideProgress(); setStatus(() => serverMsg(err.message), true); }
+    if (my === runId) {
+      hideProgress(); setStatus(() => serverMsg(err.message), true);
+      // 影片已開始處理才失敗（例如翻譯失敗、網路錯誤）：提供重試，從檢查點接著做
+      if (videoId) { retryId = videoId; $("retry").hidden = false; }
+      loadLibrary(); // 影片庫的卡片也標成失敗
+    }
     if (/ANTHROPIC_API_KEY/.test(err.message)) window.openSettings?.(true); // 沒有金鑰：直接請使用者輸入
   }
 }
+
+let retryId = null;
+$("retry").addEventListener("click", () => { if (retryId) openUrl(retryId); });
 
 $("form").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -1006,8 +1025,12 @@ function cardTip(v) {
   const names = v.title_trans && v.title_trans !== v.title ? [v.title_trans, v.title] : [v.title];
   const meta = t("meta", { via: viaLabel(v.via), count: v.count, date: new Date(v.mtime * 1000).toLocaleDateString(effLang()) });
   const seen = v.position > 0 ? t("seen", { time: fmt(v.position) }) : "";
-  return [...names, meta + seen].join("\n");
+  const err = v.status === "error" && v.error ? ["", serverMsg(v.error)] : []; // 滑過卡片可看到失敗原因
+  return [...names, meta + seen, ...err].join("\n");
 }
+
+// 失敗或中斷的影片：可以重試（從檢查點接著翻，已翻好的句子不會重翻）
+const canRetry = (v) => v.status === "error" || v.status === "paused";
 
 function libraryHtml(list) {
   return list.map((v) => `
@@ -1024,8 +1047,9 @@ function libraryHtml(list) {
           : `<div class="name">${esc(v.title)}</div>`}
         <div class="state" hidden></div>
       </div>
-      <a class="yt${v.status === "done" ? " r4" : ""}" data-ext target="_blank" rel="noopener noreferrer" href="${ytUrl(v.video_id)}" title="${esc(t("yt_open_tip"))}" aria-label="${esc(t("yt_open"))}">${EXT_ICON}</a>
+      <a class="yt${v.status === "done" ? " r4" : canRetry(v) ? " r3" : ""}" data-ext target="_blank" rel="noopener noreferrer" href="${ytUrl(v.video_id)}" title="${esc(t("yt_open_tip"))}" aria-label="${esc(t("yt_open"))}">${EXT_ICON}</a>
       ${v.status === "done" ? `<button class="redo" type="button" data-redo="${v.video_id}" title="${esc(t("redo"))}" aria-label="${esc(t("redo"))}">${REDO_ICON}</button>` : ""}
+      ${canRetry(v) ? `<button class="redo retry" type="button" data-retry="${v.video_id}" title="${esc(t("retry_tip"))}" aria-label="${esc(t("retry"))}">${REDO_ICON}</button>` : ""}
       ${v.status === "done" ? `<button class="chk" type="button" data-chk="${v.video_id}" title="${esc(t("chk"))}" aria-label="${esc(t("chk"))}">${CHECK_ICON}</button>` : ""}
       <button class="del" type="button" data-del="${v.video_id}" title="${esc(t("del"))}" aria-label="${esc(t("del"))}">✕</button>
     </div>`).join("");
@@ -1119,6 +1143,8 @@ function paintStatus(v) {
     state.textContent = v.stage === "translating" && pct > 0
       ? t("lib_running_pct", { pct })
       : t("lib_stage", { stage: I18N["zh-TW"]["stage_" + v.stage] ? stageLabel(v.stage) : t("lib_processing") });
+  } else if (v.status === "error") {
+    state.textContent = t("lib_error", { pct }); // 失敗原因放在卡片的 tooltip（cardTip）
   } else if (pending) {
     state.textContent = t("lib_paused", { pct });
   }
@@ -1274,8 +1300,12 @@ $("library").addEventListener("click", (e) => {
   if (chk) { e.stopPropagation(); checkVideo(chk.dataset.chk, chk); return; }
   const redo = e.target.closest("[data-redo]");
   if (redo) { e.stopPropagation(); reprocessVideo(redo.dataset.redo); return; }
+  const retry = e.target.closest("[data-retry]");
+  if (retry) { e.stopPropagation(); openUrl(retry.dataset.retry); return; } // 重新開啟就會從檢查點接著翻
   const item = e.target.closest(".item");
-  if (item && item.dataset.id !== videoId) openUrl(item.dataset.id);
+  if (!item) return;
+  // 點目前這支：失敗過的話就重試，否則不用重新載入
+  if (item.dataset.id !== videoId || canRetry(library.find((v) => v.video_id === videoId) || {})) openUrl(item.dataset.id);
 });
 $("library").addEventListener("keydown", (e) => {
   if (e.target.classList.contains("tag-input")) {

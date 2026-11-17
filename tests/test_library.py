@@ -113,6 +113,24 @@ def test_complete_subtitles_flag(client, tmp_path):
     assert client.get("/api/subtitles/aaaaaaaaaaa").json()["complete"] is True
 
 
+def test_library_marks_failed_jobs_with_their_error(client, tmp_path):
+    """翻譯失敗的影片要標成 error 並附上原因（前端顯示失敗與重試鈕），不是看起來像普通的「中斷」。"""
+    _make_partial(tmp_path, "bbbbbbbbbbb", n_total=4, n_done=1)
+    jobs._jobs["bbbbbbbbbbb"] = jobs.Job("bbbbbbbbbbb", status="error", error="RuntimeError: 翻譯失敗：x")
+    lib = {i["video_id"]: i for i in client.get("/api/library").json()}
+    assert lib["bbbbbbbbbbb"]["status"] == "error" and lib["bbbbbbbbbbb"]["progress"] == 0.25
+    assert lib["bbbbbbbbbbb"]["error"] == "RuntimeError: 翻譯失敗：x"
+    # 重試：再開啟一次就會重新啟動任務（從檢查點接著翻）
+    started = []
+    orig = jobs._run
+    jobs._run = lambda job: started.append(job.video_id)
+    try:
+        assert jobs.start_job("bbbbbbbbbbb").status == "running" and started == ["bbbbbbbbbbb"]
+    finally:
+        jobs._run = orig
+        jobs._jobs.pop("bbbbbbbbbbb", None)
+
+
 def test_library_lists_running_and_paused_first(client, tmp_path):
     _make(tmp_path, "aaaaaaaaaaa", "Done", 5000)
     _make_partial(tmp_path, "bbbbbbbbbbb", n_total=4, n_done=1)  # 中斷：無執行中的任務

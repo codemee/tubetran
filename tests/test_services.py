@@ -318,8 +318,35 @@ def test_translate_fails_after_retries():
         def create(self, **kw):
             return SimpleNamespace(content=[SimpleNamespace(type="text", text="no json")])
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) as e:
         translate.translate_segments([{"start": 0, "end": 1, "text": "a"}], "en", client=Bad())
+    assert "最後一次：回覆不是正確的 JSON" in str(e.value)  # 告訴使用者實際發生了什麼
+
+
+def test_translate_failure_explains_truncated_reply():
+    """回覆被輸出上限截斷（模型思考吃掉太多 token）：錯誤訊息要講出來，不能只說「重試後仍未取得譯文」。"""
+    seen = []
+
+    class Cut(FakeClient):
+        def create(self, **kw):
+            seen.append(kw["max_tokens"])
+            return SimpleNamespace(stop_reason="max_tokens", content=[SimpleNamespace(type="text", text='[{"i":0,"t":"半')])
+
+    with pytest.raises(RuntimeError) as e:
+        translate.translate_segments([{"start": 0, "end": 1, "text": "a"}], "en", client=Cut())
+    assert "token 的上限被截斷" in str(e.value) and f"試了 {translate.MAX_ATTEMPTS} 次" in str(e.value)
+    assert seen and all(n >= 16000 for n in seen)  # 上限要留給思考＋50 句譯文（原本 8192 不夠）
+
+
+def test_translate_failure_explains_missing_lines():
+    class Short(FakeClient):
+        def create(self, **kw):
+            return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text='[{"i":0,"t":"甲"}]')])
+
+    segs = [{"start": i, "end": i + 1, "text": f"s{i}"} for i in range(3)]
+    with pytest.raises(RuntimeError) as e:
+        translate.translate_segments(segs, "en", client=Short())
+    assert "有 2 句" in str(e.value) and "回覆少了 2 句" in str(e.value)
 
 
 def test_export_srt_vtt():

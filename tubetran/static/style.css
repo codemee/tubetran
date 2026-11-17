@@ -361,6 +361,7 @@ body {
 
 #status { margin: 12px 2px 0; color: var(--muted); font-size: 14px; min-height: 1.5em; }
 #status.err { color: var(--danger); font-weight: 600; }
+#retry { margin: 8px 2px 0; }
 
 /* ── 工具列 ── */
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0; }
@@ -531,6 +532,9 @@ body {
 .item .del { right: 14px; font-size: 14px; line-height: 1; }
 .item .chk { right: 46px; }
 .item .redo { right: 78px; }
+.item .redo.retry { right: 46px; } /* 失敗／中斷：右邊依序是重試、刪除 */
+.item .yt.r3 { right: 78px; }
+.item.error .state { color: var(--danger); font-style: normal; }
 .item .chk svg, .item .redo svg, .item .yt svg { width: 16px; height: 16px; }
 .item:hover .del, .item:hover .chk, .item:hover .redo, .item:hover .yt,
 .item:focus-visible .del, .item:focus-visible .chk, .item:focus-visible .redo, .item:focus-visible .yt,

@@ -317,6 +317,7 @@ def list_library() -> list[dict]:
       done    翻譯完成，可直接播放
       running 背景任務進行中（含取得字幕、辨識、翻譯）
       paused  曾開始翻譯但任務已中斷（例如伺服器重啟）；再次開啟會從檢查點接著翻
+      error   這次執行期間任務失敗（error 欄位是原因）；重試同樣從檢查點接著翻
     處理中與中斷的排在最前面，其餘依完成時間新到舊。
     """
     items = []
@@ -353,6 +354,7 @@ def list_library() -> list[dict]:
         if not running and not subs:
             continue  # 只剩殘留檔案（例如音檔）的資料夾，不列出
         total = len(subs["segments"]) if subs else 0
+        failed = bool(job and job.status == "error")
         if running:
             status, stage = "running", job.stage
             progress = job.progress if stage == "translating" else 0.0
@@ -363,8 +365,11 @@ def list_library() -> list[dict]:
                 if (c := cp.get(str(i))) and c[0] == s["text"]
             )
             status, stage, progress = "paused", "paused", (done / total if total else 0.0)
+            if failed:  # 這次執行期間失敗過：讓使用者知道原因，並可重試（從檢查點接著翻）
+                status = stage = "error"
         items.append({
             **base, "status": status, "stage": stage, "progress": progress,
+            "error": job.error if failed else "",
             "title": subs["title"] if subs else vid,
             "title_trans": "",  # 處理中的影片不補翻標題，完成後流程會一併翻譯
             "lang": subs.get("lang", "") if subs else "",

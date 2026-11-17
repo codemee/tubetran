@@ -26,6 +26,9 @@ SYSTEM_PROMPT = """你是專業的影片字幕翻譯。將輸入字幕翻譯成�
 輸出 [{"i":8,"t":"我們花了整個週末想修好那個 bug。"},{"i":9,"t":"結果原因是少了一個分號。"}]"""
 
 MAX_ATTEMPTS = 3
+# 每批輸出上限。模型會先思考（實測一批 50 句約 2000～2800 個思考 token，再加上約 1800 個譯文 token），
+# 原本 8192 偶爾會被思考吃光、譯文 JSON 被截斷，三次都失敗。
+MAX_TOKENS = 16000
 FIRST_BATCH = 15  # 第一批的句數（越小越快有可用的譯文）
 CTX_BEFORE = 3    # 每批附上前面幾句當前後文（含已有的譯文，讓用詞一致、語意接得上）
 CTX_AFTER = 2     # 每批附上後面幾句當前後文（批次最後一句才知道話怎麼接下去）
@@ -95,20 +98,24 @@ def _translate_batch(
     result: dict[int, str] = {}
     blank: set[int] = set()  # 模型回傳了空字串的編號
     pending = items
+    reason = ""  # 最後一次失敗的原因，全部重試都失敗時附在錯誤訊息裡
     for _ in range(MAX_ATTEMPTS):
         payload = json.dumps(make_payload(pending), ensure_ascii=False)
         resp = client.messages.create(
             model=config.TRANSLATE_MODEL,
-            max_tokens=8192,
+            max_tokens=MAX_TOKENS,
             system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": f"{head}影片標題：{title}\n\n{payload}"}],
         )
         text = "".join(b.text for b in resp.content if b.type == "text")
         try:
             got = parse_reply(text)
-        except (ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError) as e:
+            reason = failure_reason(resp, text, e)
             continue
         wanted = {it["i"] for it in pending}
+        if not wanted <= set(got):
+            reason = f"回覆少了 {len(wanted - set(got))} 句"
         for i, tr in got.items():
             if i not in wanted:
                 continue
@@ -126,7 +133,21 @@ def _translate_batch(
         for it in pending:
             result[it["i"]] = it["t"]
         return result
-    raise RuntimeError(f"翻譯失敗：有 {len(pending)} 句在重試後仍未取得譯文")
+    raise RuntimeError(
+        f"翻譯失敗：有 {len(pending)} 句在試了 {MAX_ATTEMPTS} 次後仍未取得譯文"
+        + (f"（最後一次：{reason}）" if reason else ""))
+
+
+def failure_reason(resp, text: str, err: Exception) -> str:
+    """說明這次回覆為什麼讀不出譯文，讓使用者看得懂發生了什麼事。"""
+    stop = getattr(resp, "stop_reason", "")
+    if stop == "max_tokens":
+        return f"回覆超過 {MAX_TOKENS} 個 token 的上限被截斷"
+    if stop == "refusal":
+        return "模型拒絕翻譯這段內容"
+    if not text.strip():
+        return f"模型沒有回傳文字（stop_reason={stop}）"
+    return f"回覆不是正確的 JSON（{type(err).__name__}: {str(err)[:80]}）"
 
 
 GLOSSARY_PROMPT = """你是專業的影片字幕翻譯，正要把一支影片的字幕翻譯成繁體中文（台灣用語）。
