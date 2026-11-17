@@ -10,7 +10,22 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
 - Downloads YouTube captions first (manual captions in the video's own language preferred, then auto-generated; captions in other languages are ignored); when there are none, downloads the audio and transcribes it locally with Whisper.
 - Translates to Traditional Chinese (Taiwan usage) with the Claude API, including the video title. Subtitles are shown one sentence at a time: auto-caption fragments that break mid-sentence are first regrouped into whole sentences before translation, so translations never drift out of alignment, and terms (such as namespace or cgroup) are translated consistently across the whole video.
 - Subtitles are overlaid on the video and stay visible in fullscreen; long subtitles are wrapped into two lines of similar length, breaking after punctuation where possible. Switch between bilingual / original / translation / none (no subtitles, for listening practice), and download SRT / VTT. YouTube's own captions are always hidden and replaced by ours.
-- Slide mode (the button next to the subtitle modes): the video stays on one subtitle's moment, and you step through subtitles with the ‹ › buttons on either side of the player (or ← →, PageUp / PageDown, so presentation clickers work too); the top left shows "current / total", and audio is muted while stepping. Press the button again to leave, staying where you were. Note: the YouTube embedded player's play button, title bar and similar overlays cannot be hidden and still appear.
+- The toolbar below the player (icon buttons; hover to see their names):
+
+  ![Toolbar](https://raw.githubusercontent.com/codemee/tubetran/main/docs/images/toolbar.png)
+
+  | Icon | What it does |
+  |---|---|
+  | 雙語 / 原文 / 譯文 / 無 (bilingual / original / translation / none) | Subtitle mode; "none" shows no subtitles, for listening practice |
+  | Presentation board | Slide mode (see the next item); the icon turns to the accent colour while on |
+  | Trash can | Delete this video's slide images (saves space); shown only when there are captured images |
+  | Download SRT / VTT | Download the subtitle file (following the current subtitle mode; "none" downloads bilingual) |
+  | Export arrow | Export this video to import on another computer (shown once translated) |
+- Slide mode (the presentation-board icon in the toolbar): the video stays on one subtitle's moment, and you step through subtitles with the ‹ › buttons on either side of the player (or ← →, PageUp / PageDown, so presentation clickers work too); the top left shows "current / total", and audio is muted while stepping. Press the button again to leave, staying where you were.
+  - The pictures are captured by TubeTran itself, without YouTube's play button, title bar and other overlays: the first time you enter slide mode for a video, it downloads the video in the background (picture only, 1080p preferred), captures one image just before each subtitle ends (avoiding transitions at the start of a sentence, so the picture is complete), then deletes the video. Progress is shown at the top right; a 10-minute video takes about 30–40 seconds and about 20 MB of images.
+  - Images are captured in subtitle order and shown as soon as they are ready; the ones not ready yet still show YouTube's overlays for a moment. Next time slide mode uses them directly, and switching is instant.
+  - Reprocessing a video (the sentences change) captures them again; exports do not include these images, so another computer captures them the first time it enters slide mode.
+  - When you no longer need them, press the trash-can icon in the toolbar (the confirmation shows how much space they use); slide mode captures them again next time.
 - The subtitle list (below the player, expandable) follows playback: the line being played is highlighted and scrolled to the middle, and clicking any line jumps there. Scrolling through the list yourself pauses following; press "Back to current line" at the bottom right to return to the line being played.
 - Fullscreen: use the fullscreen button at the player's bottom right (next to the YouTube wordmark), or press `F`. In the desktop app `F` also works after you have clicked the video (in browser mode, click outside the video first so the page can receive `F`). The fullscreen button shows and hides together with YouTube's own controls: the desktop app detects whether the "YouTube" wordmark at the bottom right of the control bar is visible; a browser cannot, so there the button stays visible while the pointer is over the player.
 - Translated lines are usable while translation is still running; the rest continues in the background, with a clear progress bar. For videos without captions, the stages of speech recognition are listed under the progress bar (download audio, download the speech model [first time only], load the model, decode audio and detect language, transcribe), with completed stages ticked and the current one showing its percentage.
@@ -160,7 +175,7 @@ Contents:
 | --- | --- |
 | `settings.json` | Settings saved by the settings panel: API key (plain text), translation model, STT model |
 | `.env` | (Optional, legacy) read-only; if present, the lowest-priority source of settings |
-| `cache/<video_id>/` | Per-video cache: `subs.json` (subtitles: raw fragments and regrouped sentences), `glossary.json` (glossary), `translated.json` (final result), `trans_partial.json` (translation checkpoint, removed when finished), `progress.json` (playback position), `tags.json` (tags; up to 10, 20 characters each), `audio.*` (audio, when there were no captions), `translated.pre-check.json` (backup taken before a manual check) |
+| `cache/<video_id>/` | Per-video cache: `subs.json` (subtitles: raw fragments and regrouped sentences), `glossary.json` (glossary), `translated.json` (final result), `trans_partial.json` (translation checkpoint, removed when finished), `progress.json` (playback position), `tags.json` (tags; up to 10, 20 characters each), `audio.*` (audio, when there were no captions), `translated.pre-check.json` (backup taken before a manual check), `slides/` (slide-mode images: one JPEG per subtitle) |
 | `webview/` | The desktop app's browser data (theme and language settings, cookies); excluded by `.gitignore` |
 | `tubetran.log` | Output log when there is no console (for example when launched by double-click) |
 
@@ -168,16 +183,18 @@ Clicking ✕ in the library deletes that video's whole `cache/<video_id>/` folde
 
 ### Moving translated videos to another computer
 
-**Export / import (recommended):**
+**Export / import (recommended):** at the top of the library, to the right of the search box, are the "Import" (arrow into a box) and "Export all" (arrow out of a box) icons; hover to see their names.
+
+![Import and Export all at the top of the library](https://raw.githubusercontent.com/codemee/tubetran/main/docs/images/library-io.png)
 
 1. Export on the original computer; it is packed into one `.json` file (the desktop app shows a "Save as" dialog):
 
-   | Button | Where | Exports | File name |
+   | Icon | Where | Exports | File name |
    |---|---|---|---|
-   | Export | Toolbar below the player (next to Download SRT / VTT, shown once translated) | The video being played | `<translated title>.json` (only the first 40 characters if longer) |
+   | Export | The toolbar below the player (shown once translated) | The video being played | `<translated title>.json` (only the first 40 characters if longer) |
    | Export all | Top of the library | Every fully translated video | `tubetran-<date>-<count>.json` |
 
-2. Take the file to the other computer and press "Import" at the top of the library to choose it (you can pick several files). The videos appear in the library, with playback position and tags.
+2. Take the file to the other computer and press the "Import" icon at the top of the library to choose it (you can pick several files). The videos appear in the library, with playback position and tags.
 3. Videos the other computer already has are skipped, not overwritten. The export contains translations, subtitles, glossary, playback position and tags, but no audio; no API key is needed to watch.
 
 **Or copy the folder directly:** everything about a video lives in its own `cache/<video_id>/` folder (`video_id` is the 11 characters after `v=` in the URL). Copy the whole folder over:
@@ -225,7 +242,7 @@ tubetran/
   settings.py       Settings panel storage, key masking, model lists
   main.py           FastAPI routes and static files
   jobs.py           Background jobs, cache, library, playback progress
-  services/         subtitles, sentences (regroup fragments into sentences), ytdl (shared yt-dlp options), transcribe (Whisper), translate (incl. glossary), review (check), export (SRT/VTT)
+  services/         subtitles, sentences (regroup fragments into sentences), ytdl (shared yt-dlp options and downloads), frames (slide images), transcribe (Whisper), translate (incl. glossary), review (check), export (SRT/VTT)
   static/           Frontend (no build step): index.html, app.js, settings.js, desktop.js, i18n.js, linebreak.js (subtitle wrapping), style.css, logo/
 packaging/          PyInstaller configuration and launcher (launch.py)
 tests/              pytest

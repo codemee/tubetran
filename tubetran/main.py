@@ -118,6 +118,48 @@ def reprocess_library_item(video_id: str):
     return jobs.job_dict(result)
 
 
+@app.get("/api/slides/{video_id}")
+def get_slides(video_id: str):
+    """投影片畫面的狀態（none：還沒準備；running：處理中，ready 張已可用；done；error）。"""
+    try:
+        status = jobs.slide_status(video_id)
+    except ValueError:
+        raise HTTPException(400, "不合法的影片 ID")
+    if status is None:
+        raise HTTPException(404, "字幕尚未準備好")
+    return status
+
+
+@app.post("/api/slides/{video_id}")
+def start_slides(video_id: str):
+    """第一次進入投影片模式時呼叫：下載影片並擷取每則字幕的畫面（已經好了就直接回報）。"""
+    try:
+        status = jobs.start_slides(video_id)
+    except ValueError:
+        raise HTTPException(400, "不合法的影片 ID")
+    if status is None:
+        raise HTTPException(404, "字幕尚未準備好")
+    return status
+
+
+@app.delete("/api/slides/{video_id}")
+def delete_slides(video_id: str):
+    """刪除投影片畫面（省空間；下次進入投影片模式會重新擷取）。"""
+    try:
+        existed = jobs.delete_slides(video_id)
+    except ValueError:
+        raise HTTPException(400, "不合法的影片 ID")
+    return {"deleted": existed}
+
+
+@app.get("/api/slides/{video_id}/{index}.jpg")
+def slide_image(video_id: str, index: int):
+    p = jobs.slide_image(video_id, index)
+    if p is None:
+        raise HTTPException(404, "這張畫面還沒準備好")
+    return FileResponse(p, media_type="image/jpeg")
+
+
 @app.get("/api/export")
 def export_videos(ids: str = ""):
     """匯出已翻譯的影片（ids：以逗號分隔的影片 ID；空的表示全部）。回傳一個可下載的 JSON 檔。"""

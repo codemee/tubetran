@@ -98,3 +98,44 @@ def test_export_current_video_sits_with_the_player_toolbar_and_export_all_in_the
     assert 'id="lib-export"' in top and 'id="lib-import"' in top
     js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
     assert '$("export-current").hidden = !data.complete' in js  # 翻譯完成才能匯出
+
+
+def test_slide_mode_uses_our_own_captured_images():
+    """投影片模式用自己擷取的畫面（沒有 YouTube 的播放介面）蓋住播放器；第一次進入時才請後端準備。"""
+    html = (config.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert html.index('id="player"') < html.index('id="slide-img"') < html.index('id="overlay"')  # 蓋住播放器、字幕在上面
+    assert 'id="slide-prep"' in html                                    # 準備進度
+    js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    assert "function ensureSlides" in js and 'pollSlides(videoId, "POST")' in js
+    assert "ensureSlides(); }" in js                                    # 進入投影片模式時才開始準備
+    i18n = (config.STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
+    for key in ("slides_downloading:", "slides_extracting:", "slides_error:"):
+        assert i18n.count(key) == 2, key
+
+
+def test_hidden_attribute_always_hides():
+    """回歸：瀏覽器預設的 [hidden]{display:none} 會被 .btn 的 display: inline-flex 蓋掉，
+    「刪除投影片」「下載 SRT／VTT」「匯出」設了 hidden 照樣顯示。要有一條全域規則。"""
+    assert re.search(r"(^|\n)\[hidden\]\s*\{\s*display:\s*none\s*!important;?\s*\}", _css())
+
+
+def test_toolbar_right_group_does_not_use_a_spacer_element():
+    """回歸：撐開用的空白元素寬度 0 卻多佔一個 gap，寬度剛好時「匯出」被擠到下一行。改用 margin-left:auto。"""
+    html = (config.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'class="sp"' not in html
+    assert re.search(r"#dl-srt\s*\{\s*margin-left:\s*auto", _css())
+
+
+def test_toolbar_buttons_are_icons_with_tooltips():
+    """工具列的按鈕都是圖示：沒有可見文字（不能用 data-i18n，它會用文字蓋掉圖示），名稱放在 title 與 aria-label。"""
+    html = (config.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    bar = html[html.index('id="bar"'):html.index('id="transcript"')]
+    top = html[html.index('id="lib-top"'):html.index('id="lib-tools"')]
+    for area, bid in [(bar, b) for b in ("slide-toggle", "slide-delete", "dl-srt", "dl-vtt", "export-current")] + \
+                     [(top, b) for b in ("lib-import", "lib-export")]:  # 影片庫上方的匯入／匯出全部也是
+        tag = re.search(rf'<(?:button|a) id="{bid}"[^>]*>', area).group(0)
+        assert "data-i18n=" not in tag, bid
+        assert re.search(r'data-i18n-attr="title:\w+;aria-label:\w+"', tag), bid
+        body = area[area.index(tag) + len(tag):].split("</", 1)[0]
+        assert "<svg" in body, bid
+

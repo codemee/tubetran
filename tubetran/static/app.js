@@ -441,18 +441,93 @@ function gotoSlide(i) {
   if (!player?.seekTo || !segs.length) return;
   slideIdx = Math.max(0, Math.min(segs.length - 1, i));
   const s = segs[slideIdx];
-  player.seekTo(Math.min(s.start + 0.05, (s.start + s.end) / 2), true);
+  player.seekTo(Math.min(s.start + 0.05, (s.start + s.end) / 2), true); // 播放器仍跟著跳：字幕依它的時間顯示
   if (player.getPlayerState?.() === YT.PlayerState.PLAYING) player.pauseVideo();
   syncSlideUi();
 }
-// 注意：YouTube 嵌入播放器暫停時一定會疊上大播放鈕、標題列與 YouTube 字樣（播放中也會），參數關不掉、
-// 網頁也碰不到跨網域 iframe 的內容，所以投影片模式下仍看得到這些介面。試過在播放中截圖蓋上：播放中一樣有介面，
-// 還會閃動，已放棄。
 
 function syncSlideUi() {
   $("slide-count").textContent = segs.length ? `${slideIdx + 1} / ${segs.length}` : "";
   $("slide-prev").disabled = slideIdx <= 0;
   $("slide-next").disabled = slideIdx >= segs.length - 1;
+  showSlideImage();
+}
+
+// ── 投影片的畫面：YouTube 嵌入播放器的播放鈕、標題列等介面關不掉（暫停、播放中都有；試過截圖蓋上也不行），
+// 所以第一次進入投影片模式時，請後端下載影片（1080p 優先）並在每則字幕的時間點擷取一張圖，用它蓋住播放器。
+// 擷取是依字幕順序進行的，已經好的先用；還沒好的那幾則暫時看得到 YouTube 的介面。 ──
+let slides = { video_id: null, status: "none", ready: 0, total: 0, stamp: 0 }, slidePoll = null;
+
+const slideUrl = (i) => `/api/slides/${videoId}/${i}.jpg?v=${slides.stamp || "p"}`;
+const slideReady = (i) => slides.video_id === videoId && i >= 0 && i < (slides.status === "done" ? slides.total : slides.ready);
+
+function showSlideImage() {
+  const img = $("slide-img");
+  if (!slideMode || !slideReady(slideIdx)) { img.hidden = true; return; }
+  const url = slideUrl(slideIdx);
+  if (img.getAttribute("src") !== url) img.src = url;
+  img.hidden = false;
+  for (const j of [slideIdx + 1, slideIdx - 1]) if (slideReady(j)) new Image().src = slideUrl(j); // 預先載入前後兩張：切換是即時的
+}
+
+function renderSlidePrep() {
+  const box = $("slide-prep");
+  const s = slides;
+  box.hidden = !slideMode || s.video_id !== videoId || !(s.status === "running" || s.status === "error");
+  if (box.hidden) return;
+  if (s.status === "error") { box.textContent = t("slides_error"); box.title = s.error || ""; return; }
+  box.title = "";
+  box.textContent = s.stage === "extracting"
+    ? t("slides_extracting", { n: s.ready, total: s.total })
+    : t("slides_downloading", { pct: Math.round((s.progress || 0) * 100) });
+}
+
+function applySlides(s) {
+  slides = s;
+  renderSlidePrep();
+  showSlideImage();
+  // 這支影片有投影片畫面（擷取好了，或正在擷取）才出現「刪除投影片」
+  $("slide-delete").hidden = !(s.video_id === videoId && (s.status === "done" || s.status === "running"));
+  clearTimeout(slidePoll);
+  if (s.status === "running" && slideMode) slidePoll = setTimeout(() => pollSlides(s.video_id), 1000);
+}
+
+async function pollSlides(id, method = "GET") {
+  if (!slideMode || id !== videoId) return;
+  try {
+    const res = await fetch(`/api/slides/${id}`, { method });
+    if (!res.ok || id !== videoId) return;
+    applySlides(await res.json());
+  } catch (_) { slidePoll = setTimeout(() => pollSlides(id), 3000); } // 暫時連不上：稍後再試
+}
+
+// 載入影片時查一下有沒有投影片畫面（只查，不會開始準備），決定要不要顯示「刪除投影片」
+async function loadSlideStatus(id) {
+  try {
+    const res = await fetch(`/api/slides/${id}`);
+    if (res.ok && id === videoId) applySlides(await res.json());
+  } catch (_) {}
+}
+
+$("slide-delete").addEventListener("click", async () => {
+  const id = videoId;
+  if (!id) return;
+  const v = library.find((x) => x.video_id === id);
+  const mb = slides.bytes ? Math.max(1, Math.round(slides.bytes / 1e6)) : "?";
+  if (!confirm(t("confirm_slide_delete", { name: v ? (v.title_trans || v.title) : id, mb }))) return;
+  clearTimeout(slidePoll);
+  const res = await fetch(`/api/slides/${id}`, { method: "DELETE" });
+  if (!res.ok) { const detail = (await res.json()).detail; setStatus(() => serverMsg(detail), true); return; }
+  if (id !== videoId) return;
+  applySlides({ video_id: id, status: "none", ready: 0, total: slides.total, stamp: 0 }); // 畫面拿掉；投影片模式改回 YouTube 播放器
+  setStatus(() => t("slide_deleted"));
+});
+
+// 進入投影片模式（或換了影片）時呼叫：已經準備好就直接用；沒有的話開始準備（已在處理就接著等）
+function ensureSlides() {
+  if (!slideMode || !videoId) return;
+  if (slides.video_id === videoId && slides.status === "done") { showSlideImage(); return; }
+  pollSlides(videoId, "POST");
 }
 
 function setSlideMode(on) {
@@ -461,7 +536,8 @@ function setSlideMode(on) {
   slideMode = on;
   $("stage").classList.toggle("slides", on);
   $("slide-toggle").setAttribute("aria-pressed", String(on));
-  if (on) slideIdx = Math.max(0, lastStarted(t)); // 從目前這則開始
+  if (on) { slideIdx = Math.max(0, lastStarted(t)); ensureSlides(); } // 從目前這則開始；第一次會開始準備畫面
+  else { clearTimeout(slidePoll); $("slide-img").hidden = true; renderSlidePrep(); }
   saveProgress();
   try { player?.destroy(); } catch (_) {}
   createPlayer(videoId, t, () => {
@@ -623,7 +699,8 @@ function applySubs(data) {
   if (slideMode) { // 換了影片（或字幕更新了）：停在目前位置的那一則
     if (slideIdx < 0) gotoSlide(Math.max(0, lastStarted(player?.getCurrentTime?.() || 0)));
     else syncSlideUi();
-  }
+    if (data.complete) ensureSlides(); // 畫面要等字幕完成（時間點才固定）才能擷取
+  } else if (data.complete && slides.video_id !== videoId) loadSlideStatus(videoId);
 }
 
 // 翻譯進行中：取得「已翻好的部分」就先讓使用者用，其餘由後端背景繼續翻
@@ -658,6 +735,9 @@ async function pollJob(id, my) {
 function resetView() {
   segs = []; videoId = null; current = -1; listCur = -1; follow = true; partialShown = false;
   slideIdx = -1; // 換影片時仍維持投影片模式，字幕載入後從這支影片的位置開始
+  slides = { video_id: null, status: "none", ready: 0, total: 0, stamp: 0 };
+  clearTimeout(slidePoll);
+  $("slide-delete").hidden = true; $("slide-img").hidden = true;
   $("follow").hidden = true;
   setTitle("", "");
   $("list").innerHTML = ""; $("overlay").innerHTML = "";

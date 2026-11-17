@@ -61,19 +61,19 @@ def _fake_downloader(fail_times: int, calls: list):
 def test_audio_download_retries_after_403(tmp_path, monkeypatch):
     """回歸：gKDnMEsYOWs 下載音檔偶發 HTTP 403，整個任務就失敗。要重新取得網址再試。"""
     calls = []
-    monkeypatch.setattr(transcribe.yt_dlp, "YoutubeDL", _fake_downloader(2, calls))
-    monkeypatch.setattr(transcribe, "RETRY_WAIT", 0)
+    monkeypatch.setattr(ytdl.yt_dlp, "YoutubeDL", _fake_downloader(2, calls))
+    monkeypatch.setattr(ytdl, "RETRY_WAIT", 0)
     path = transcribe.download_audio("gKDnMEsYOWs", tmp_path)
     assert len(calls) == 3 and path.name == "audio.webm"  # .part 不能被當成下載完成的音檔
 
 
 def test_audio_download_gives_up_after_the_last_attempt(tmp_path, monkeypatch):
     calls = []
-    monkeypatch.setattr(transcribe.yt_dlp, "YoutubeDL", _fake_downloader(99, calls))
-    monkeypatch.setattr(transcribe, "RETRY_WAIT", 0)
+    monkeypatch.setattr(ytdl.yt_dlp, "YoutubeDL", _fake_downloader(99, calls))
+    monkeypatch.setattr(ytdl, "RETRY_WAIT", 0)
     with pytest.raises(yt_dlp.utils.DownloadError):
         transcribe.download_audio("gKDnMEsYOWs", tmp_path)
-    assert len(calls) == transcribe.DOWNLOAD_ATTEMPTS
+    assert len(calls) == ytdl.DOWNLOAD_ATTEMPTS
 
 
 def test_cancel_during_retry_wait_stops_immediately(tmp_path, monkeypatch):
@@ -81,8 +81,8 @@ def test_cancel_during_retry_wait_stops_immediately(tmp_path, monkeypatch):
         pass
 
     calls = []
-    monkeypatch.setattr(transcribe.yt_dlp, "YoutubeDL", _fake_downloader(99, calls))
-    monkeypatch.setattr(transcribe, "RETRY_WAIT", 0)
+    monkeypatch.setattr(ytdl.yt_dlp, "YoutubeDL", _fake_downloader(99, calls))
+    monkeypatch.setattr(ytdl, "RETRY_WAIT", 0)
 
     def check():
         raise Cancelled
@@ -90,3 +90,4 @@ def test_cancel_during_retry_wait_stops_immediately(tmp_path, monkeypatch):
     with pytest.raises(Cancelled):
         transcribe.download_audio("gKDnMEsYOWs", tmp_path, check)
     assert len(calls) == 1  # 第一次失敗後就發現已被取消，不再重試
+

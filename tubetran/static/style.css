@@ -1,3 +1,7 @@
+/* hidden 屬性一律隱藏。瀏覽器預設的 [hidden]{display:none} 優先順序最低，會被 .btn 等設了 display 的樣式蓋掉
+   （回歸：「刪除投影片」「下載 SRT／VTT」「匯出」設了 hidden 卻照樣顯示）。 */
+[hidden] { display: none !important; }
+
 /* ── 主題色票 ──────────────────────────────────────────
    淺色：白、藍、紅、黃
    深色：紫、螢光綠、橘 */
@@ -284,7 +288,18 @@ body {
   display: block; position: absolute; top: 12px; left: 14px; z-index: 2; padding: 2px 10px; border-radius: 999px;
   background: rgba(0, 0, 0, .55); color: #fff; font-size: 13px; font-variant-numeric: tabular-nums; pointer-events: none;
 }
-#stage.no-video .slide-nav, #stage.no-video #slide-count { display: none; } /* 刪掉目前的影片後：只留「貼上網址」提示 */
+/* 自己擷取的畫面：蓋住播放器（含 YouTube 的播放介面）。用 cover 填滿：播放區有 1px 邊框，內部不是精確的 16:9，
+   用 contain 左右會各留一條黑線（回歸）；cover 只會裁掉那一兩個像素 */
+#slide-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; pointer-events: none; }
+#slide-img[hidden], #stage:not(.slides) #slide-img { display: none; }
+/* 準備畫面的進度（右上角）：下載影片、擷取畫面 */
+#stage.slides #slide-prep:not([hidden]) {
+  display: block; position: absolute; top: 12px; right: 14px; z-index: 2; max-width: 60%; padding: 2px 10px;
+  border-radius: 999px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 12.5px; pointer-events: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#slide-prep { display: none; }
+#stage.no-video .slide-nav, #stage.no-video #slide-count, #stage.no-video #slide-prep, #stage.no-video #slide-img { display: none; } /* 刪掉目前的影片後：只留「貼上網址」提示 */
 #slide-toggle[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 
 /* ── 處理進度（取得字幕／辨識／翻譯） ── */
@@ -350,7 +365,17 @@ body {
 /* ── 工具列 ── */
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0; }
 .toolbar[hidden] { display: none; }
-.sp { flex: 1; }
+/* 下載／匯出靠右：用 margin-left:auto，不要另外放一個撐開的空白元素——它本身寬度是 0，卻會多佔一個 gap，
+   寬度剛好的時候害最後一個按鈕被擠到下一行（回歸） */
+#dl-srt { margin-left: auto; }
+/* 工具列的圖示按鈕：線條圖示（currentColor）；下載鈕下方的格式名稱用實心小字 */
+.toolbar .btn.tb svg {
+  width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.toolbar .btn.tb svg text {
+  fill: currentColor; stroke: none; font: 700 7.5px system-ui, sans-serif; text-anchor: middle; letter-spacing: .2px;
+}
 .seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
 .seg label { cursor: pointer; }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
@@ -404,7 +429,12 @@ body {
 #lib-tools[hidden] { display: none; }
 #lib-top { display: flex; gap: 6px; margin: 0 2px 8px; }
 #lib-top #lib-search[hidden], .lib-io[hidden] { display: none; }
-.lib-io { padding: 6px 10px; font-size: 13px; white-space: nowrap; }
+/* 匯入／匯出全部：和搜尋框同高的圖示按鈕 */
+.btn.icon.lib-io { width: 34px; height: 34px; flex: none; }
+.lib-io svg {
+  width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 #lib-search {
   flex: 1; min-width: 0;
   width: 100%; padding: 7px 10px; border-radius: 10px; font: inherit; font-size: 13.5px;

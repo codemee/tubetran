@@ -7,7 +7,7 @@ import time
 from dataclasses import asdict, dataclass
 
 from tubetran import config
-from tubetran.services import review, sentences, subtitles, transcribe, translate
+from tubetran.services import frames, review, sentences, subtitles, transcribe, translate
 
 
 @dataclass
@@ -455,6 +455,7 @@ def delete_video(video_id: str) -> str:
     if not VIDEO_ID_RE.fullmatch(video_id):
         raise ValueError("不合法的影片 ID")
     with _lock:
+        _cancel_slides(video_id)
         job = _jobs.get(video_id)
         if job and job.status == "running":
             job.cancelled = True
@@ -463,6 +464,13 @@ def delete_video(video_id: str) -> str:
         _jobs.pop(video_id, None)
     shutil.rmtree(config.CACHE_DIR / video_id, ignore_errors=True)
     return "deleted"
+
+
+def _cancel_slides(video_id: str) -> None:
+    """要求正在準備投影片畫面的任務停下來（呼叫端持有 _lock）。它會在下一張圖之前結束並清掉 slides/。"""
+    sj = _slide_jobs.pop(video_id, None)
+    if sj and sj.status == "running":
+        sj.cancelled = True
 
 
 def reprocess_video(video_id: str) -> Job | str | None:
@@ -492,8 +500,128 @@ def reprocess_video(video_id: str) -> Job | str | None:
                       result_path(video_id).with_name("translated.pre-check.json"),
                       result_path(video_id).with_name("glossary.json")):
                 p.unlink(missing_ok=True)
+            shutil.rmtree(slides_dir(video_id), ignore_errors=True)  # 句子會變，投影片畫面要重新擷取
+        _cancel_slides(video_id)
         _jobs.pop(video_id, None)
     return start_job(video_id)
+
+
+# ── 投影片的畫面：第一次進入投影片模式時才處理（下載影片 → 每則字幕擷取一張圖 → 刪掉影片）──
+# 存在 cache/<id>/slides/：0000.jpg…，以及 slides.json（{"times": [...], "stamp": 產生時間}）。
+# times 和目前字幕的時間點一致才算有效；字幕重新處理過（句子變了）就要重新擷取。
+@dataclass
+class SlideJob:
+    video_id: str
+    status: str = "running"  # running | done | error
+    stage: str = "downloading_video"  # downloading_video | extracting
+    progress: float = 0.0
+    ready: int = 0  # 已經擷取好的張數（依字幕順序；網頁可以先用這些）
+    total: int = 0
+    error: str = ""
+    cancelled: bool = False
+
+
+_slide_jobs: dict[str, SlideJob] = {}
+
+
+def slides_dir(video_id: str):
+    return config.CACHE_DIR / video_id / "slides"
+
+
+def _slide_times(video_id: str) -> list[float] | None:
+    data = load_result(video_id)
+    return [frames.frame_time(s) for s in data["segments"]] if data else None
+
+
+def slide_status(video_id: str) -> dict | None:
+    """投影片畫面的狀態；影片還沒翻譯完成（沒有字幕）時回傳 None。"""
+    if not VIDEO_ID_RE.fullmatch(video_id):
+        raise ValueError("不合法的影片 ID")
+    times = _slide_times(video_id)
+    if times is None:
+        return None
+    job = _slide_jobs.get(video_id)
+    if job and job.status != "done":
+        return {**asdict(job), "stamp": 0}
+    meta = _read_json(slides_dir(video_id) / "slides.json") if (slides_dir(video_id) / "slides.json").exists() else None
+    if meta and meta.get("times") == times:
+        size = sum(p.stat().st_size for p in slides_dir(video_id).glob("*.jpg"))
+        return {"video_id": video_id, "status": "done", "stage": "done", "progress": 1.0,
+                "ready": len(times), "total": len(times), "error": "", "stamp": meta.get("stamp", 0), "bytes": size}
+    return {"video_id": video_id, "status": "none", "stage": "", "progress": 0.0,
+            "ready": 0, "total": len(times), "error": "", "stamp": 0}
+
+
+def start_slides(video_id: str) -> dict | None:
+    """開始準備投影片畫面（已經好了或正在處理就不重複）。影片還沒翻譯完成時回傳 None。"""
+    status = slide_status(video_id)
+    if status is None or status["status"] in ("done", "running"):
+        return status
+    times = _slide_times(video_id)
+    with _lock:
+        job = _slide_jobs.get(video_id)
+        if job and job.status == "running":
+            return {**asdict(job), "stamp": 0}
+        job = SlideJob(video_id, total=len(times))
+        _slide_jobs[video_id] = job
+    threading.Thread(target=_run_slides, args=(job, times), daemon=True).start()
+    return {**asdict(job), "stamp": 0}
+
+
+def _run_slides(job: SlideJob, times: list[float]) -> None:
+    vid = job.video_id
+    out = slides_dir(vid)
+
+    def check():
+        if job.cancelled:
+            raise Cancelled
+
+    def on_download(p: float):
+        check()
+        job.progress = p
+
+    video = None
+    try:
+        shutil.rmtree(out, ignore_errors=True)  # 舊的（字幕已經變了）不要了
+        out.mkdir(parents=True, exist_ok=True)
+        video = frames.download_video(vid, out, check, on_download)
+        job.stage, job.progress = "extracting", 0.0
+
+        def on_frame(n: int):
+            job.ready, job.progress = n, n / len(times)
+
+        frames.extract_frames(video, times, out, on_frame, check)
+        _write_json(out / "slides.json", {"times": times, "stamp": int(time.time())})
+        job.status, job.stage, job.progress = "done", "done", 1.0
+    except Cancelled:
+        shutil.rmtree(out, ignore_errors=True)
+        with _lock:
+            _slide_jobs.pop(vid, None)
+    except Exception as e:  # noqa: BLE001 - 回報給網頁；投影片模式照常可用（只是沒有乾淨的畫面）
+        job.status, job.error = "error", f"{type(e).__name__}: {e}"[:300]
+    finally:
+        for p in out.glob("video.*") if out.exists() else ():  # 影片只是用來擷取畫面，擷取完（或失敗）就刪掉
+            p.unlink(missing_ok=True)
+
+
+def delete_slides(video_id: str) -> bool:
+    """刪除這支影片的投影片畫面（正在擷取就先要求停下）。回傳原本有沒有畫面。下次進入投影片模式會重新擷取。"""
+    if not VIDEO_ID_RE.fullmatch(video_id):
+        raise ValueError("不合法的影片 ID")
+    d = slides_dir(video_id)
+    existed = d.exists()
+    with _lock:
+        _cancel_slides(video_id)
+    shutil.rmtree(d, ignore_errors=True)
+    return existed
+
+
+def slide_image(video_id: str, index: int):
+    """第 index 則字幕的畫面檔案；還沒擷取好時回傳 None。"""
+    if not VIDEO_ID_RE.fullmatch(video_id) or not (0 <= index < 100_000):
+        return None
+    p = slides_dir(video_id) / f"{index:04d}.jpg"
+    return p if p.exists() else None
 
 
 # ── 匯出／匯入：把翻好的影片帶到其他電腦 ──
