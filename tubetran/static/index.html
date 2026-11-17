@@ -130,6 +130,15 @@
         <div id="empty" data-i18n="empty">貼上 YouTube 網址，或從右側選一支已翻譯的影片</div>
         <div id="player"></div>
         <div id="overlay"></div>
+        <!-- 投影片模式：透明遮罩擋住播放器（不會被點到開始播放），左右箭頭跳到上一則／下一則字幕 -->
+        <div id="slide-shield"></div>
+        <button id="slide-prev" class="slide-nav" type="button" title="上一則字幕 (←)" aria-label="上一則字幕" data-i18n-attr="title:slide_prev;aria-label:slide_prev_aria">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+        </button>
+        <button id="slide-next" class="slide-nav" type="button" title="下一則字幕 (→)" aria-label="下一則字幕" data-i18n-attr="title:slide_next;aria-label:slide_next_aria">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <div id="slide-count"></div>
         <div id="busy" hidden><span class="spin" aria-hidden="true"></span><span id="busy-text"></span></div>
         <button id="fs" type="button" title="全螢幕 (F)" aria-label="全螢幕" data-i18n-attr="title:fs;aria-label:fs">
           <!-- 全螢幕：四個角的線條圖示（單色，和 YouTube 播放器的按鈕風格一致） -->
@@ -166,11 +175,14 @@
           <label><input type="radio" name="mode" value="both" checked><span data-i18n="mode_both">雙語</span></label>
           <label><input type="radio" name="mode" value="orig"><span data-i18n="mode_orig">原文</span></label>
           <label><input type="radio" name="mode" value="trans"><span data-i18n="mode_trans">譯文</span></label>
+          <!-- 不顯示字幕：練聽力用（YouTube 原字幕一律隱藏，我們的字幕也不顯示） -->
+          <label data-i18n-attr="title:mode_none_tip"><input type="radio" name="mode" value="none"><span data-i18n="mode_none">無</span></label>
         </div>
-        <label class="check"><input type="checkbox" id="hide-native" checked> <span data-i18n="hide_native">隱藏 YouTube 原字幕</span></label>
+        <button id="slide-toggle" class="btn" type="button" aria-pressed="false" data-i18n="slide_mode" data-i18n-attr="title:slide_mode_tip">投影片模式</button>
         <span class="sp"></span>
-        <a id="dl-srt" class="btn" href="#" data-i18n="dl_srt">下載 SRT</a>
-        <a id="dl-vtt" class="btn" href="#" data-i18n="dl_vtt">下載 VTT</a>
+        <a id="dl-srt" class="btn" href="#" data-dl data-i18n="dl_srt">下載 SRT</a>
+        <a id="dl-vtt" class="btn" href="#" data-dl data-i18n="dl_vtt">下載 VTT</a>
+        <button id="export-current" class="btn" type="button" hidden data-i18n="export_current" data-i18n-attr="title:export_current_tip">匯出</button>
       </div>
 
       <details id="transcript" class="card" hidden>
@@ -182,9 +194,16 @@
 
     <aside class="col-side" aria-label="已翻譯的影片" data-i18n-attr="aria-label:side_title">
       <!-- 搜尋與標籤篩選：放在 #library 之外，清單重畫時不會失去輸入焦點 -->
-      <div id="lib-tools" hidden>
-        <input id="lib-search" type="search" placeholder="搜尋標題或標籤" autocomplete="off"
+      <!-- 搜尋＋匯入／匯出：影片庫是空的時只顯示「匯入」（從其他電腦帶過來） -->
+      <div id="lib-top">
+        <input id="lib-search" type="search" placeholder="搜尋標題或標籤" autocomplete="off" hidden
                data-i18n-attr="placeholder:lib_search_ph;aria-label:lib_search_ph">
+        <button id="lib-import" class="btn lib-io" type="button" data-i18n="lib_import" data-i18n-attr="title:lib_import_tip">匯入</button>
+        <!-- 匯出全部已翻譯的影片；只匯出目前這支在播放器下方的工具列 -->
+        <button id="lib-export" class="btn lib-io" type="button" hidden data-i18n="lib_export" data-i18n-attr="title:lib_export_tip">匯出全部</button>
+        <input id="lib-import-file" type="file" accept=".json,application/json" multiple hidden>
+      </div>
+      <div id="lib-tools" hidden>
         <!-- 標籤列：平時收成一行，放不下的標籤收進最後面的「更多 +N」（由頁面的腳本計算）；「清除篩選」固定在右側，不會跟著標籤捲動 -->
         <div id="tag-bar">
           <div id="tag-filter" role="group" aria-label="依標籤篩選" data-i18n-attr="aria-label:tag_filter_label"></div>

@@ -263,6 +263,30 @@ body {
 #fs:hover { background: rgba(255, 255, 255, .18); }
 #stage:fullscreen:not(.active), #stage.pseudo-fs:not(.active) { cursor: none; }
 
+/* ── 投影片模式：沒有 YouTube 控制介面，左右箭頭跳到上一則／下一則字幕，畫面停在那一格 ── */
+#slide-shield, .slide-nav, #slide-count { display: none; }
+#stage.slides #slide-shield { display: block; position: absolute; inset: 0; z-index: 1; } /* 擋住播放器：點不到、不會開始播放 */
+#stage.slides .slide-nav {
+  display: grid; place-items: center; position: absolute; top: 50%; z-index: 2; transform: translateY(-50%);
+  width: clamp(40px, 6cqw, 72px); height: clamp(64px, 14cqw, 140px); padding: 0;
+  border: 0; border-radius: 12px; background: rgba(0, 0, 0, .35); color: #fff; cursor: pointer;
+  opacity: .55; transition: opacity .15s, background .15s;
+}
+#stage.slides #slide-prev { left: 12px; }
+#stage.slides #slide-next { right: 12px; }
+#stage.slides .slide-nav:hover, #stage.slides .slide-nav:focus-visible { opacity: 1; background: rgba(0, 0, 0, .6); }
+#stage.slides .slide-nav:disabled { opacity: .15; cursor: default; }
+.slide-nav svg {
+  width: 60%; height: 60%; fill: none; stroke: currentColor; stroke-width: 2.5;
+  stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .65));
+}
+#stage.slides #slide-count {
+  display: block; position: absolute; top: 12px; left: 14px; z-index: 2; padding: 2px 10px; border-radius: 999px;
+  background: rgba(0, 0, 0, .55); color: #fff; font-size: 13px; font-variant-numeric: tabular-nums; pointer-events: none;
+}
+#stage.no-video .slide-nav, #stage.no-video #slide-count { display: none; } /* 刪掉目前的影片後：只留「貼上網址」提示 */
+#slide-toggle[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+
 /* ── 處理進度（取得字幕／辨識／翻譯） ── */
 #progress { margin-top: 12px; padding: 16px 18px; border-color: var(--primary); }
 #progress[hidden] { display: none; }
@@ -378,7 +402,11 @@ body {
 /* 搜尋與標籤篩選 */
 #lib-tools { display: flex; flex-direction: column; gap: 8px; margin: 0 2px 10px; }
 #lib-tools[hidden] { display: none; }
+#lib-top { display: flex; gap: 6px; margin: 0 2px 8px; }
+#lib-top #lib-search[hidden], .lib-io[hidden] { display: none; }
+.lib-io { padding: 6px 10px; font-size: 13px; white-space: nowrap; }
 #lib-search {
+  flex: 1; min-width: 0;
   width: 100%; padding: 7px 10px; border-radius: 10px; font: inherit; font-size: 13.5px;
   border: 1px solid var(--border); background: var(--surface); color: inherit;
 }

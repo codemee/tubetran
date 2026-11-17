@@ -496,5 +496,63 @@ def reprocess_video(video_id: str) -> Job | str | None:
     return start_job(video_id)
 
 
+# ── 匯出／匯入：把翻好的影片帶到其他電腦 ──
+# 匯出檔是一個 JSON：{"format": "tubetran-export", "version": 1, "videos": [{"video_id": ..., "files": {檔名: 內容}}]}。
+# 只帶這些檔案（都是 JSON）；音檔不帶（可能數十 MB，辨識完就用不到）。translated.json 是必要的。
+EXPORT_FORMAT = "tubetran-export"
+EXPORT_FILES = ("translated.json", "subs.json", "glossary.json", "progress.json", "tags.json")
+
+
+def export_bundle(video_ids: list[str] | None = None) -> dict:
+    """把已翻譯完成的影片打包成匯出檔的內容。video_ids 為 None 時匯出全部；未完成的影片略過。"""
+    from tubetran import __version__
+
+    if video_ids is None:
+        video_ids = [d.name for d in config.CACHE_DIR.iterdir()] if config.CACHE_DIR.exists() else []
+    videos = []
+    for vid in video_ids:
+        if not VIDEO_ID_RE.fullmatch(vid) or not result_path(vid).exists():
+            continue
+        files = {}
+        for name in EXPORT_FILES:
+            data = _read_json(config.CACHE_DIR / vid / name) if (config.CACHE_DIR / vid / name).exists() else None
+            if data is not None:
+                files[name] = data
+        if "translated.json" in files:
+            videos.append({"video_id": vid, "files": files})
+    return {"format": EXPORT_FORMAT, "version": 1, "app_version": __version__,
+            "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "videos": videos}
+
+
+def import_bundle(bundle) -> dict:
+    """匯入匯出檔。已經有（翻譯完成或處理中）的影片略過，不覆蓋本機的資料。
+    回傳 {"imported": [...], "skipped": [...], "invalid": 筆數}；整個檔案不是匯出檔時丟出 ValueError。"""
+    if not isinstance(bundle, dict) or bundle.get("format") != EXPORT_FORMAT or not isinstance(bundle.get("videos"), list):
+        raise ValueError("不是水管譯工的匯出檔")
+    imported, skipped, invalid = [], [], 0
+    for item in bundle["videos"]:
+        vid = item.get("video_id") if isinstance(item, dict) else None
+        files = item.get("files") if isinstance(item, dict) else None
+        if not (isinstance(vid, str) and VIDEO_ID_RE.fullmatch(vid) and isinstance(files, dict)
+                and isinstance(files.get("translated.json"), dict)
+                and isinstance(files["translated.json"].get("segments"), list)):
+            invalid += 1
+            continue
+        with _lock:
+            job = _jobs.get(vid)
+            busy = bool(job and job.status == "running")
+        if busy or result_path(vid).exists():
+            skipped.append(vid)
+            continue
+        d = config.CACHE_DIR / vid
+        d.mkdir(parents=True, exist_ok=True)
+        for name in EXPORT_FILES:  # 只寫入認得的檔名，其餘忽略
+            if name in files and isinstance(files[name], (dict, list)):
+                _write_json(d / name, files[name])
+        checkpoint_path(vid).unlink(missing_ok=True)  # 本機翻到一半的檢查點已經用不到
+        imported.append(vid)
+    return {"imported": imported, "skipped": skipped, "invalid": invalid}
+
+
 def job_dict(job: Job) -> dict:
     return asdict(job)

@@ -118,6 +118,59 @@ def reprocess_library_item(video_id: str):
     return jobs.job_dict(result)
 
 
+@app.get("/api/export")
+def export_videos(ids: str = ""):
+    """匯出已翻譯的影片（ids：以逗號分隔的影片 ID；空的表示全部）。回傳一個可下載的 JSON 檔。"""
+    import json
+    import time
+
+    wanted = [v for v in ids.split(",") if v] or None
+    bundle = jobs.export_bundle(wanted)
+    if not bundle["videos"]:
+        raise HTTPException(404, "沒有可以匯出的影片（只能匯出已翻譯完成的影片）")
+    videos = bundle["videos"]
+    if len(videos) == 1:  # 單一影片：檔名用譯名（沒有就用原標題、影片 ID），好辨認
+        tr = videos[0]["files"]["translated.json"]
+        name = f"{export_file_stem(tr.get('title_trans') or tr.get('title'), videos[0]['video_id'])}.json"
+    else:  # 多支：日期＋支數
+        name = f"tubetran-{time.strftime('%Y%m%d')}-{len(videos)}.json"
+    return PlainTextResponse(
+        json.dumps(bundle, ensure_ascii=False),
+        media_type="application/json",
+        headers={"Content-Disposition": content_disposition(name)},
+    )
+
+
+EXPORT_NAME_MAX = 40  # 檔名最多保留幾個字（不含副檔名）
+
+
+def export_file_stem(title: str | None, fallback: str) -> str:
+    """把影片名稱整理成可用的檔名：去掉 Windows／macOS 不允許的字元與控制字元、合併空白、
+    去掉結尾的點與空白（Windows 不允許），太長只留前 EXPORT_NAME_MAX 個字。整理完是空的就用 fallback。"""
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]', " ", str(title or ""))
+    name = re.sub(r"\s+", " ", name).strip()[:EXPORT_NAME_MAX].rstrip(" .")
+    return name or fallback
+
+
+def content_disposition(filename: str) -> str:
+    """下載檔名的標頭。中文等非 ASCII 檔名要用 RFC 5987 的 filename*（HTTP 標頭只能放 ASCII），
+    另附一個 ASCII 的 filename 給不支援的程式。"""
+    from urllib.parse import quote
+
+    ascii_name = filename.encode("ascii", "ignore").decode().strip() or "tubetran.json"
+    if ascii_name.startswith("."):
+        ascii_name = "tubetran" + ascii_name
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename)}"
+
+
+@app.post("/api/import")
+def import_videos(bundle: dict):
+    try:
+        return jobs.import_bundle(bundle)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.get("/api/jobs/{video_id}")
 def job_status(video_id: str):
     job = jobs.get_job(video_id)
@@ -134,10 +187,10 @@ def download_subtitles(video_id: str, fmt: str, mode: str = "both"):
     if not data:
         raise HTTPException(404, "字幕尚未準備好")
     fn = export.to_srt if fmt == "srt" else export.to_vtt
-    return PlainTextResponse(
-        fn(data["segments"], mode),
-        headers={"Content-Disposition": f'attachment; filename="{video_id}.{mode}.{fmt}"'},
-    )
+    # 檔名用譯名（同匯出檔）；雙語不加後綴，原文／譯文加 .orig／.trans 區分
+    stem = export_file_stem(data.get("title_trans") or data.get("title"), video_id)
+    name = f"{stem}.{fmt}" if mode == "both" else f"{stem}.{mode}.{fmt}"
+    return PlainTextResponse(fn(data["segments"], mode), headers={"Content-Disposition": content_disposition(name)})
 
 
 @app.get("/api/subtitles/{video_id}")

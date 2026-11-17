@@ -117,12 +117,15 @@ $("lang-btn").addEventListener("click", () => {
 
 // ── 字幕顯示 ──
 // 翻譯進行中時，尚未翻好的句子沒有 trans：先顯示原文，譯文處標示「翻譯中…」
-function lines(s) {
+// m：顯示模式。「無」（練聽力）只影響影片上的字幕；下方的字幕清單照樣顯示雙語，方便事後對照
+const listMode = () => (mode === "none" ? "both" : mode);
+function lines(s, m = listMode()) {
   const o = `<div>${esc(s.text)}</div>`;
   const has = s.trans != null;
   const tr = has ? `<div class="t">${esc(s.trans)}</div>` : `<div class="t pending">${t("pending_tr")}</div>`;
-  if (mode === "orig") return o;
-  if (mode === "trans") return has ? tr : `<div class="pending">${esc(s.text)}</div>`;
+  if (m === "none") return "";
+  if (m === "orig") return o;
+  if (m === "trans") return has ? tr : `<div class="pending">${esc(s.text)}</div>`;
   return o + tr;
 }
 
@@ -140,13 +143,14 @@ function renderList() {
   $("overlay").innerHTML = "";
   tick(); // 立刻補回目前這一句，避免更新時字幕閃一下
   if (videoId) {
-    $("dl-srt").href = `/api/subtitles/${videoId}.srt?mode=${mode}`;
-    $("dl-vtt").href = `/api/subtitles/${videoId}.vtt?mode=${mode}`;
+    $("dl-srt").href = `/api/subtitles/${videoId}.srt?mode=${listMode()}`;
+    $("dl-vtt").href = `/api/subtitles/${videoId}.vtt?mode=${listMode()}`;
   }
 }
 
 $("list").addEventListener("click", (e) => {
   const row = e.target.closest(".row");
+  if (row && player && slideMode) { gotoSlide(+row.dataset.i); return; } // 投影片模式：跳到那一則，畫面停住
   if (row && player) {
     player.seekTo(segs[+row.dataset.i].start, true);
     follow = true; // 點了某一句：跳過去並恢復跟隨（那一句就在畫面上，不需要捲動）
@@ -241,7 +245,7 @@ setInterval(tick, 200);
 const measureCtx = document.createElement("canvas").getContext("2d");
 function showOverlay() {
   const box = $("overlay");
-  box.innerHTML = current >= 0 && segs[current] ? lines(segs[current]) : "";
+  box.innerHTML = current >= 0 && segs[current] ? lines(segs[current], mode) : ""; // 模式「無」：影片上不顯示
   for (const d of box.children) {
     const cs = getComputedStyle(d);
     const max = (box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) * 0.97;
@@ -373,41 +377,110 @@ document.addEventListener("keydown", (e) => {
     const state = player?.getPlayerState?.();                    // player 是本檔案最上面用 let 宣告的，不在 window 上
     const paused = !(state === 1 || state === 3);                // 1 = 播放中、3 = 緩衝中；其餘（暫停、結束、尚未開始）都視為暫停
     const reading = logoFresh ? fsLogoReading(logo.value, logo.prev) : null;   // 防抖：單次異常值不算
-    stage.classList.toggle("active", fsShouldShow(st, now, paused, tracking, reading));
+    // 投影片模式沒有 YouTube 控制列可以跟：全螢幕鈕一直顯示
+    stage.classList.toggle("active", slideMode || fsShouldShow(st, now, paused, tracking, reading));
   }, 150);
 }
 
 // ── YouTube 播放器 ──
-// 關閉原生字幕（unloadModule 為非官方文件做法，失敗時忽略）
+// 一律關閉 YouTube 原字幕：這個程式就是用我們自己的字幕取代它（unloadModule 為非官方文件做法，失敗時忽略）
 function applyNativeCaptions() {
   if (!player || !player.unloadModule) return;
-  try {
-    if ($("hide-native").checked) player.unloadModule("captions");
-    else player.loadModule("captions");
-  } catch (_) {}
+  try { player.unloadModule("captions"); } catch (_) {}
 }
-$("hide-native").addEventListener("change", applyNativeCaptions);
 
 async function loadVideo(id, start = 0) {
   await apiReady;
   $("empty").hidden = true;
   $("stage").classList.remove("no-video");
   if (player) player.loadVideoById({ videoId: id, startSeconds: start });
-  else
-    player = new YT.Player("player", {
-      videoId: id,
-      playerVars: { rel: 0, cc_load_policy: 0, fs: 0, start: Math.floor(start) },
-      events: {
-        onReady: applyNativeCaptions,
-        onStateChange: (e) => {
-          // 字幕模組會在開始播放時才載入，因此每次開始播放都再套用一次
-          if (e.data === YT.PlayerState.PLAYING) applyNativeCaptions();
-          if (e.data === YT.PlayerState.PAUSED) saveProgress();
-          if (e.data === YT.PlayerState.ENDED) saveProgress(true); // 看完了，下次從頭開始
-        },
-      },
-    });
+  else createPlayer(id, start);
 }
+
+// 建立播放器。YouTube 的控制介面（controls）只能在建立時決定，所以進出投影片模式時要在同一個時間點重建。
+function createPlayer(id, start, onReady) {
+  // YT.Player 會把 #player 換成 iframe；destroy() 之後不一定留下原本的 div，所以每次都放一個新的
+  const holder = document.createElement("div");
+  holder.id = "player";
+  const old = $("player");
+  if (old) old.replaceWith(holder);
+  else $("empty").after(holder); // destroy() 沒留下任何元素：放回原本的位置（截圖與字幕層的下面）
+  player = new YT.Player("player", {
+    videoId: id,
+    playerVars: {
+      rel: 0, cc_load_policy: 0, fs: 0, start: Math.floor(start),
+      // 投影片模式：不顯示 YouTube 的控制列、不接受鍵盤、不顯示資訊卡
+      ...(slideMode ? { controls: 0, disablekb: 1, iv_load_policy: 3 } : {}),
+    },
+    events: {
+      onReady: () => { applyNativeCaptions(); onReady?.(); },
+      onStateChange: (e) => {
+        // 字幕模組會在開始播放時才載入，因此每次開始播放都再套用一次（投影片模式也要，否則原字幕會出現）
+        if (e.data === YT.PlayerState.PLAYING) applyNativeCaptions();
+        // 停在某一格：投影片模式下任何原因開始播放（seekTo 在尚未播放時會自動開始）都立刻停住；
+        // 剛退出投影片模式時也一樣，要等真的開始播放（第一格畫面出來了）才暫停，太早暫停畫面會是黑的
+        if (e.data === YT.PlayerState.PLAYING && (slideMode || holdFrame)) {
+          player.pauseVideo();
+          if (holdFrame && !slideMode) player.unMute(); // 退出投影片模式：畫面停好之後才恢復聲音
+          holdFrame = false;
+          return;
+        }
+        if (e.data === YT.PlayerState.PAUSED) saveProgress();
+        if (e.data === YT.PlayerState.ENDED) saveProgress(true); // 看完了，下次從頭開始
+      },
+    },
+  });
+}
+
+// ── 投影片模式：沒有 YouTube 控制介面；左右箭頭（或 ← →、PageUp／PageDown）跳到上一則／下一則字幕的開始時間，
+// 畫面停在那一格。靜音，免得跳格時漏出一點聲音。字幕照常疊在畫面上 ──
+let slideMode = false, slideIdx = -1, holdFrame = false;
+
+// 跳到第 i 則字幕：稍微超過開始時間一點，才不會落在上一則的結尾
+function gotoSlide(i) {
+  if (!player?.seekTo || !segs.length) return;
+  slideIdx = Math.max(0, Math.min(segs.length - 1, i));
+  const s = segs[slideIdx];
+  player.seekTo(Math.min(s.start + 0.05, (s.start + s.end) / 2), true);
+  if (player.getPlayerState?.() === YT.PlayerState.PLAYING) player.pauseVideo();
+  syncSlideUi();
+}
+// 注意：YouTube 嵌入播放器暫停時一定會疊上大播放鈕、標題列與 YouTube 字樣（播放中也會），參數關不掉、
+// 網頁也碰不到跨網域 iframe 的內容，所以投影片模式下仍看得到這些介面。試過在播放中截圖蓋上：播放中一樣有介面，
+// 還會閃動，已放棄。
+
+function syncSlideUi() {
+  $("slide-count").textContent = segs.length ? `${slideIdx + 1} / ${segs.length}` : "";
+  $("slide-prev").disabled = slideIdx <= 0;
+  $("slide-next").disabled = slideIdx >= segs.length - 1;
+}
+
+function setSlideMode(on) {
+  if (on === slideMode || !videoId) return;
+  const t = player?.getCurrentTime?.() || 0;
+  slideMode = on;
+  $("stage").classList.toggle("slides", on);
+  $("slide-toggle").setAttribute("aria-pressed", String(on));
+  if (on) slideIdx = Math.max(0, lastStarted(t)); // 從目前這則開始
+  saveProgress();
+  try { player?.destroy(); } catch (_) {}
+  createPlayer(videoId, t, () => {
+    player.mute(); // 為了載入那一格畫面會短暫播放一下：先靜音
+    if (on) gotoSlide(slideIdx);
+    else { holdFrame = true; player.seekTo(t, true); } // 退出後停在原來的位置（開始播放時暫停並恢復聲音）
+  });
+}
+
+$("slide-toggle").addEventListener("click", () => setSlideMode(!slideMode));
+$("slide-prev").addEventListener("click", () => gotoSlide(slideIdx - 1));
+$("slide-next").addEventListener("click", () => gotoSlide(slideIdx + 1));
+document.addEventListener("keydown", (e) => {
+  if (!slideMode || e.ctrlKey || e.altKey || e.metaKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "")) return;
+  const step = { ArrowLeft: -1, PageUp: -1, ArrowRight: 1, PageDown: 1 }[e.key]; // 簡報遙控器送的通常是 PageUp／PageDown
+  if (!step) return;
+  e.preventDefault();
+  gotoSlide(slideIdx + step);
+});
 
 // ── 播放進度：記錄在後端（cache/<id>/progress.json），下次開啟時接著看 ──
 const resumeOf = (pos, dur) => (pos < 5 || (dur && pos > dur - 10) ? 0 : pos);
@@ -545,8 +618,12 @@ function applySubs(data) {
   segs = data.segments;
   $("bar").hidden = false;
   $("transcript").hidden = false; // 預設維持收合
-  $("dl-srt").hidden = $("dl-vtt").hidden = !data.complete; // 下載需等翻譯完成
+  $("dl-srt").hidden = $("dl-vtt").hidden = $("export-current").hidden = !data.complete; // 下載、匯出需等翻譯完成
   renderList();
+  if (slideMode) { // 換了影片（或字幕更新了）：停在目前位置的那一則
+    if (slideIdx < 0) gotoSlide(Math.max(0, lastStarted(player?.getCurrentTime?.() || 0)));
+    else syncSlideUi();
+  }
 }
 
 // 翻譯進行中：取得「已翻好的部分」就先讓使用者用，其餘由後端背景繼續翻
@@ -580,6 +657,7 @@ async function pollJob(id, my) {
 
 function resetView() {
   segs = []; videoId = null; current = -1; listCur = -1; follow = true; partialShown = false;
+  slideIdx = -1; // 換影片時仍維持投影片模式，字幕載入後從這支影片的位置開始
   $("follow").hidden = true;
   setTitle("", "");
   $("list").innerHTML = ""; $("overlay").innerHTML = "";
@@ -747,7 +825,7 @@ $("tag-clear").addEventListener("click", () => {
 });
 
 function renderLibrary() {
-  $("lib-tools").hidden = !library.length;
+  $("lib-tools").hidden = $("lib-search").hidden = $("lib-export").hidden = !library.length; // 空的時只留「匯入」
   if (!library.length) {
     libKey = "";
     $("tag-filter").dataset.html = ""; $("tag-filter").innerHTML = "";
@@ -988,6 +1066,85 @@ async function deleteVideo(id) {
   }
   loadLibrary(); // 還有處理中的項目就會持續更新，取消完成後那一項會自己消失
 }
+
+// ── 下載檔案（匯出檔、SRT／VTT）──
+// 桌面版的 WebView 不允許直接下載，改由桌面版跳出「另存新檔」對話框；瀏覽器則照一般方式下載。
+// 回傳 {saved: 路徑}（桌面版）、{downloaded: true}（瀏覽器）、{cancelled: true}，失敗時丟出錯誤。
+async function downloadFile(path) {
+  const api = window.pywebview?.api;
+  if (typeof api?.save_download === "function") {
+    const r = await api.save_download(path);
+    if (r?.error) throw new Error(r.error);
+    return r || { cancelled: true };
+  }
+  const res = await fetch(path);
+  if (!res.ok) throw new Error((await res.json()).detail);
+  // 檔名：優先用 filename*（UTF-8，中文檔名），其次 filename
+  const disp = res.headers.get("Content-Disposition") || "";
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(disp)?.[1];
+  const name = (utf8 && decodeURIComponent(utf8.trim())) || /filename="([^"]+)"/.exec(disp)?.[1] || "tubetran.json";
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(await res.blob()), download: name });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  return { downloaded: true };
+}
+
+// SRT／VTT 下載鈕：桌面版改走「另存新檔」（瀏覽器維持一般的連結下載）
+document.addEventListener("click", async (e) => {
+  const a = e.target.closest("a[data-dl]");
+  if (!a || typeof window.pywebview?.api?.save_download !== "function") return;
+  e.preventDefault();
+  try {
+    const r = await downloadFile(a.getAttribute("href"));
+    if (r.saved) setStatus(() => t("dl_saved", { path: r.saved }));
+  } catch (err) { setStatus(() => serverMsg(err.message), true); }
+});
+
+// 匯出（只匯出已翻譯完成的），打包成一個 .json 檔：
+// 影片庫上方的「匯出全部」＝所有影片；播放器下方工具列的「匯出」＝目前播放的這支（翻譯完成才出現）
+const doneIds = () => library.filter((v) => v.status === "done").map((v) => v.video_id);
+$("lib-export").addEventListener("click", () => exportVideos(null));
+$("export-current").addEventListener("click", () => { if (videoId) exportVideos([videoId]); });
+
+async function exportVideos(ids) {
+  const n = ids ? ids.length : doneIds().length;
+  setStatus(() => t("io_exporting"));
+  try {
+    const r = await downloadFile(ids ? `/api/export?ids=${ids.join(",")}` : "/api/export"); // 不指定 ids：全部
+    if (r.saved) setStatus(() => t("io_exported", { n, path: r.saved }));
+    else if (r.cancelled) setStatus(() => t("io_cancelled"));
+    else setStatus(() => t("io_downloaded", { n })); // 瀏覽器：存到瀏覽器的下載資料夾
+  } catch (err) { setStatus(() => serverMsg(err.message), true); }
+}
+
+// 匯入：選一個或多個匯出檔；已經有的影片略過、不覆蓋
+$("lib-import").addEventListener("click", () => $("lib-import-file").click());
+$("lib-import-file").addEventListener("change", async (e) => {
+  const files = [...e.target.files];
+  e.target.value = ""; // 同一個檔案再選一次也要觸發
+  if (!files.length) return;
+  setStatus(() => t("io_importing"));
+  const total = { imported: 0, skipped: 0, invalid: 0 }, bad = [];
+  for (const f of files) {
+    let bundle;
+    try { bundle = JSON.parse(await f.text()); } catch (_) { bad.push(f.name); continue; }
+    const res = await fetch("/api/import", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bundle),
+    });
+    if (!res.ok) { bad.push(f.name); continue; }
+    const r = await res.json();
+    total.imported += r.imported.length; total.skipped += r.skipped.length; total.invalid += r.invalid;
+  }
+  setStatus(() => {
+    let msg = total.imported ? t("io_imported", { n: total.imported }) : t("io_nothing");
+    if (total.skipped) msg += t("io_skipped", { n: total.skipped });
+    if (total.invalid) msg += t("io_invalid", { n: total.invalid });
+    return msg + bad.map((name) => "　·　" + t("io_bad_file", { name })).join("");
+  }, !total.imported && (bad.length > 0 || total.invalid > 0));
+  loadLibrary();
+});
 
 // 篩選列：點標籤切換（可複選）、清除篩選、搜尋
 $("tag-filter").addEventListener("click", (e) => {

@@ -1,3 +1,4 @@
+import re
 import json
 
 import pytest
@@ -356,3 +357,100 @@ def test_tags_file_corrupt_is_ignored(client, tmp_path):
     _make(tmp_path, vid, "x", 1000)
     (tmp_path / vid / "tags.json").write_text("{not json", encoding="utf-8")
     assert client.get("/api/library").json()[0]["tags"] == []
+
+
+# ── 匯出／匯入：把翻好的影片帶到其他電腦 ──
+def test_export_then_import_on_another_computer(client, tmp_path, monkeypatch):
+    vid = "aaaaaaaaaaa"
+    d = _make_done_with_subs(tmp_path, vid, "whisper")
+    _make(tmp_path, "bbbbbbbbbbb", "B", 2000)
+    _make_partial(tmp_path, "ccccccccccc")  # 未完成：不匯出
+
+    r = client.get(f"/api/export?ids={vid},ccccccccccc")
+    assert r.status_code == 200 and "attachment" in r.headers["content-disposition"]
+    bundle = r.json()
+    assert bundle["format"] == "tubetran-export" and [v["video_id"] for v in bundle["videos"]] == [vid]
+    files = bundle["videos"][0]["files"]
+    assert set(files) == {"translated.json", "subs.json", "glossary.json", "progress.json", "tags.json"}  # 不含音檔
+    assert len(client.get("/api/export").json()["videos"]) == 2  # 不指定：全部已完成的
+    assert client.get("/api/export?ids=ccccccccccc").status_code == 404
+
+    # 另一台電腦：空的資料夾
+    other = tmp_path / "other"
+    other.mkdir()
+    monkeypatch.setattr(config, "CACHE_DIR", other)
+    res = client.post("/api/import", json=bundle).json()
+    assert res == {"imported": [vid], "skipped": [], "invalid": 0}
+    lib = client.get("/api/library").json()
+    assert [v["video_id"] for v in lib] == [vid] and lib[0]["status"] == "done"
+    assert lib[0]["tags"] == ["教學"] and lib[0]["position"] == 100  # 標籤與播放位置一起帶過來
+    assert not list((other / vid).glob("audio.*"))
+    # 再匯入一次：已經有了，略過、不覆蓋
+    (other / vid / "translated.json").write_text(json.dumps({"title": "本機改過", "segments": []}), encoding="utf-8")
+    assert client.post("/api/import", json=bundle).json() == {"imported": [], "skipped": [vid], "invalid": 0}
+    assert json.loads((other / vid / "translated.json").read_text(encoding="utf-8"))["title"] == "本機改過"
+
+
+def test_import_rejects_bad_files_and_ignores_unknown_content(client, tmp_path):
+    assert client.post("/api/import", json={"hello": 1}).status_code == 400  # 不是匯出檔
+    bundle = {"format": "tubetran-export", "version": 1, "videos": [
+        {"video_id": "../../etc/xx", "files": {"translated.json": {"segments": []}}},           # 不合法的 ID
+        {"video_id": "ddddddddddd", "files": {"subs.json": {}}},                                  # 缺 translated.json
+        {"video_id": "eeeeeeeeeee", "files": {"translated.json": {"title": "E", "segments": []},
+                                              "evil.py": {"x": 1}, "../x.json": {"y": 1}}},       # 不認得的檔名
+    ]}
+    assert client.post("/api/import", json=bundle).json() == {"imported": ["eeeeeeeeeee"], "skipped": [], "invalid": 2}
+    assert sorted(p.name for p in (tmp_path / "eeeeeeeeeee").iterdir()) == ["translated.json"]
+    assert not (tmp_path / "ddddddddddd").exists()
+
+
+def test_import_skips_a_video_that_is_being_processed(client, tmp_path):
+    jobs._jobs["aaaaaaaaaaa"] = jobs.Job("aaaaaaaaaaa")  # 處理中
+    bundle = {"format": "tubetran-export", "version": 1,
+              "videos": [{"video_id": "aaaaaaaaaaa", "files": {"translated.json": {"segments": []}}}]}
+    assert client.post("/api/import", json=bundle).json()["skipped"] == ["aaaaaaaaaaa"]
+
+
+def test_export_file_name_single_video_uses_its_translated_title(client, tmp_path):
+    from urllib.parse import unquote
+
+    _make(tmp_path, "aaaaaaaaaaa", "Docker", 1000)  # 譯名「譯:Docker」
+    _make(tmp_path, "bbbbbbbbbbb", "B", 2000)
+    one = client.get("/api/export?ids=aaaaaaaaaaa").headers["content-disposition"]
+    name = unquote(re.search(r"filename\*=UTF-8''([^;]+)", one).group(1))
+    assert name == "譯 Docker.json"                              # 譯名當檔名；「:」不能用在檔名，換成空白
+    assert 'filename="' in one                                     # 另附 ASCII 檔名給不支援 filename* 的程式
+    allv = client.get("/api/export").headers["content-disposition"]
+    assert re.search(r'filename="tubetran-\d{8}-2\.json"', allv)    # 全部：日期＋支數
+
+
+def test_subtitle_download_file_names_use_the_translated_title(client, tmp_path):
+    from urllib.parse import unquote
+
+    d = tmp_path / "aaaaaaaaaaa"
+    d.mkdir()
+    (d / "translated.json").write_text(json.dumps({
+        "title": "Docker", "title_trans": "譯:Docker", "lang": "en",
+        "segments": [{"start": 0.0, "end": 1.0, "text": "Hi.", "trans": "嗨。"}],
+    }, ensure_ascii=False), encoding="utf-8")
+
+    def name(url):
+        h = client.get(url).headers["content-disposition"]
+        return unquote(re.search(r"filename\*=UTF-8''([^;]+)", h).group(1))
+
+    assert name("/api/subtitles/aaaaaaaaaaa.srt?mode=both") == "譯 Docker.srt"
+    assert name("/api/subtitles/aaaaaaaaaaa.srt?mode=orig") == "譯 Docker.orig.srt"
+    assert name("/api/subtitles/aaaaaaaaaaa.vtt?mode=trans") == "譯 Docker.trans.vtt"
+
+
+def test_export_file_stem_cleans_and_shortens_titles():
+    from tubetran.main import EXPORT_NAME_MAX, export_file_stem
+
+    assert export_file_stem('A/B\\C:D*E?F"G<H>I|J', "x") == "A B C D E F G H I J"
+    assert export_file_stem("  多個   空白\t\n換行  ", "x") == "多個 空白 換行"
+    assert export_file_stem("結尾的點...", "x") == "結尾的點"          # Windows 不允許檔名結尾是點
+    long = "很長的標題" * 20
+    assert export_file_stem(long, "x") == long[:EXPORT_NAME_MAX]
+    assert export_file_stem("", "aaaaaaaaaaa") == "aaaaaaaaaaa"       # 沒有名稱：用影片 ID
+    assert export_file_stem("///", "aaaaaaaaaaa") == "aaaaaaaaaaa"
+

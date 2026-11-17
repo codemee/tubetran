@@ -12,6 +12,7 @@ import json
 import math
 import multiprocessing
 import os
+import re
 import socket
 import sys
 import threading
@@ -29,6 +30,19 @@ WINDOW_TITLE = "水管譯工"
 MIN_WINDOW_SIZE = (400, 240)
 # 桌面版允許從網頁開啟的外部連結（見 _DesktopApi.open_external）
 EXTERNAL_PREFIXES = ("https://www.youtube.com/watch?v=", "https://github.com/codemee/tubetran")
+# 桌面版「另存新檔」只接受這些後端網址（見 _DesktopApi.save_download）：匯出檔、SRT／VTT 字幕
+DOWNLOAD_PATH = re.compile(r"/api/export(\?ids=[A-Za-z0-9_,-]*)?|/api/subtitles/[A-Za-z0-9_-]{11}\.(srt|vtt)(\?mode=(both|orig|trans))?")
+
+
+def download_filename(disposition: str) -> str:
+    """從 Content-Disposition 取得檔名：優先用 filename*（UTF-8，中文檔名），其次 filename。"""
+    from urllib.parse import unquote
+
+    m = re.search(r"filename\*=UTF-8''([^;]+)", disposition, re.I)
+    if m:
+        return unquote(m.group(1).strip())
+    m = re.search(r'filename="([^"]+)"', disposition)
+    return m.group(1) if m else "tubetran-download"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -191,6 +205,7 @@ class _DesktopApi:
         self._normal_rect = None
         self._resize = None
         self._moving = False
+        self._port = 0  # 本機後端的埠號（save_download 向它取得要下載的內容）
 
     def open_external(self, url):
         """用系統預設瀏覽器開啟連結。WebView 裡的 target="_blank" 不一定會開外部瀏覽器，所以由這裡處理。
@@ -199,6 +214,40 @@ class _DesktopApi:
         if url.startswith(EXTERNAL_PREFIXES):
             return bool(webbrowser.open(url))
         return False
+
+    def save_download(self, path):
+        """桌面版的下載：WebView 預設不允許下載檔案（pywebview 的 ALLOW_DOWNLOADS 關閉），
+        所以由這裡向自己的後端取得內容，跳出「另存新檔」對話框讓使用者選位置後寫入。
+        只接受本程式的匯出與字幕下載網址。回傳 {"saved": 路徑}、{"cancelled": True} 或 {"error": 訊息}。"""
+        import urllib.error
+        import urllib.request
+
+        path = str(path)
+        if self._window is None or not self._port or not DOWNLOAD_PATH.fullmatch(path):
+            return {"error": "不支援的下載"}
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{self._port}{path}", timeout=60) as resp:
+                body = resp.read()
+                disp = resp.headers.get("Content-Disposition", "")
+        except urllib.error.HTTPError as e:
+            try:
+                return {"error": json.loads(e.read()).get("detail", str(e))}
+            except ValueError:
+                return {"error": str(e)}
+        except OSError as e:
+            return {"error": str(e)}
+        name = download_filename(disp)
+        import webview
+
+        chosen = self._window.create_file_dialog(webview.FileDialog.SAVE, save_filename=name)
+        if not chosen:
+            return {"cancelled": True}
+        target = Path(chosen if isinstance(chosen, str) else chosen[0])
+        try:
+            target.write_bytes(body)
+        except OSError as e:
+            return {"error": f"無法寫入檔案：{e}"}
+        return {"saved": str(target)}
 
     def set_fullscreen(self, on):
         on = bool(on)
@@ -500,6 +549,7 @@ def run_desktop(native_titlebar: bool = False) -> int:
         # 無框視窗（自製標題列與視窗按鈕）目前只在 Windows 上做並測試過；其他系統維持系統標題列
         custom = sys.platform == "win32" and not native_titlebar
         api = _DesktopApi(custom_chrome=custom)
+        api._port = port
         # easy_drag=False：預設的「頁面任何地方按住都能拖動視窗」會吃掉選取文字、拖曳進度條等操作，
         # 改成只有 .pywebview-drag-region（頁首的空白處）能拖；DIRECT_TARGET_ONLY 讓裡面的輸入框與按鈕不觸發拖曳
         webview.settings["DRAG_REGION_DIRECT_TARGET_ONLY"] = True
