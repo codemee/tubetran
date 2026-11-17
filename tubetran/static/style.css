@@ -20,6 +20,10 @@
   --danger: #d62f2f;           /* 紅 */
   --warn: #f2b705;             /* 黃 */
   --hl: #dbe6fa;
+  --search-hit: #fff1a8;       /* 搜尋命中 */
+  --search-cur: #ffc928;       /* 目前這個命中 */
+  --search-cur-ring: #b58500;
+  --search-cur-ink: inherit;
   --ring: #f2b705;
   /* 圖示風格的控制項（頁首輸入框與載入鈕）：粗外框＋與外框不同色的填色，色票取自圖示 */
   --brand-edge: #1646a0;       /* 圖示外框（藍） */
@@ -44,6 +48,10 @@
     --danger: #ff6a1a;         /* 橘 */
     --warn: #ff8a1f;
     --hl: #2f1c5a;
+    --search-hit: rgba(255, 138, 31, .32);
+    --search-cur: #ff8a1f;
+    --search-cur-ring: #ffd0a0;
+    --search-cur-ink: #171322;
     --ring: #9dff2e;
     --brand-edge: #7443c5;     /* 圖示外框（紫） */
     --brand-fill: #a8f044;     /* 圖示底色（綠） */
@@ -65,6 +73,10 @@
   --danger: #ff6a1a;
   --warn: #ff8a1f;
   --hl: #2f1c5a;
+  --search-hit: rgba(255, 138, 31, .32);
+  --search-cur: #ff8a1f;
+  --search-cur-ring: #ffd0a0;
+  --search-cur-ink: #171322;
   --ring: #9dff2e;
   --brand-edge: #7443c5;
   --brand-fill: #a8f044;
@@ -300,7 +312,7 @@ body {
 }
 #slide-prep { display: none; }
 #stage.no-video .slide-nav, #stage.no-video #slide-count, #stage.no-video #slide-prep, #stage.no-video #slide-img { display: none; } /* 刪掉目前的影片後：只留「貼上網址」提示 */
-#slide-toggle[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+#slide-toggle[aria-pressed="true"], #search-toggle[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 
 /* ── 處理進度（取得字幕／辨識／翻譯） ── */
 #progress { margin-top: 12px; padding: 16px 18px; border-color: var(--primary); }
@@ -415,7 +427,21 @@ body {
 }
 #follow[hidden] { display: none; }
 .row .t { color: var(--accent); }
-
+/* 搜尋命中：一般命中淡黃底，目前這個用較深的橘色並加外框 */
+.row mark { background: var(--search-hit); color: inherit; border-radius: 3px; padding: 0 1px; }
+.row mark.cur { background: var(--search-cur); color: var(--search-cur-ink); box-shadow: 0 0 0 1.5px var(--search-cur-ring); }
+/* 搜尋面板：在工具列裡佔一整行 */
+#search-panel { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#search-q {
+  flex: 1 1 220px; min-width: 0; height: 34px; padding: 0 12px; font: inherit; font-size: 14px;
+  color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+}
+#search-q:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+#search-q.bad { border-color: var(--danger); }
+#search-count { min-width: 4.5em; font-size: 13px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+#search-panel .btn:disabled { opacity: .4; cursor: default; }
+.search-opts { display: flex; flex-wrap: wrap; gap: 4px 14px; flex-basis: 100%; font-size: 13px; color: var(--muted); }
+.search-opts label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 /* ── 右側影片庫 ── */
 /* 影片清單區：做成獨立的面板（淺底＋細框），與左邊的播放區分開；不使用彩色分隔線 */
 .col-side {

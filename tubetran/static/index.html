@@ -194,6 +194,11 @@
           <!-- 垃圾桶 -->
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>
         </button>
+        <button id="search-toggle" class="btn icon tb" type="button" aria-pressed="false" aria-controls="search-panel"
+                title="搜尋字幕" aria-label="搜尋字幕" data-i18n-attr="title:search_tip;aria-label:search">
+          <!-- 放大鏡 -->
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
+        </button>
         <a id="dl-srt" class="btn icon tb" href="#" data-dl title="下載 SRT" aria-label="下載 SRT" data-i18n-attr="title:dl_srt;aria-label:dl_srt">
           <!-- 下載箭頭＋格式名稱（兩顆都是下載，要分得出來） -->
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v9M8.5 7.5L12 11l3.5-3.5"/><text x="12" y="21.5">SRT</text></svg>
@@ -206,6 +211,26 @@
           <!-- 匯出：盒子＋往外的箭頭 -->
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M8 7l4-4 4 4M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></svg>
         </button>
+        <!-- 搜尋字幕面板：按放大鏡展開，佔工具列一整行。搜尋字幕清單上顯示的文字（原文、譯文） -->
+        <div id="search-panel" role="search" hidden>
+          <input id="search-q" type="search" autocomplete="off" spellcheck="false" placeholder="搜尋字幕"
+                 aria-label="搜尋字幕" data-i18n-attr="placeholder:search_ph;aria-label:search">
+          <span id="search-count" aria-live="polite"></span>
+          <button id="search-prev" class="btn icon tb" type="button" title="上一個 (Shift+Enter)" aria-label="上一個"
+                  data-i18n-attr="title:search_prev_tip;aria-label:search_prev">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
+          </button>
+          <button id="search-next" class="btn icon tb" type="button" title="下一個 (Enter)" aria-label="下一個"
+                  data-i18n-attr="title:search_next_tip;aria-label:search_next">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="search-opts">
+            <label><input id="search-ci" type="checkbox" checked><span data-i18n="search_ci">不分大小寫</span></label>
+            <label><input id="search-word" type="checkbox"><span data-i18n="search_word">完整單字</span></label>
+            <label><input id="search-re" type="checkbox"><span data-i18n="search_re">規則表達式</span></label>
+            <label data-i18n-attr="title:search_seek_tip"><input id="search-seek" type="checkbox"><span data-i18n="search_seek">影片也跳過去</span></label>
+          </div>
+        </div>
       </div>
 
       <details id="transcript" class="card" hidden>
@@ -252,6 +277,7 @@
   <script src="/static/i18n.js"></script>
   <script src="/static/fsbutton.js"></script>
   <script src="/static/linebreak.js"></script>
+  <script src="/static/search.js"></script>
   <script src="/static/app.js"></script>
   <script src="/static/settings.js"></script>
   <script src="/static/desktop.js"></script>

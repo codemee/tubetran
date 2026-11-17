@@ -19,6 +19,7 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
   | 雙語 / 原文 / 譯文 / 無 (bilingual / original / translation / none) | Subtitle mode; "none" shows no subtitles, for listening practice |
   | Presentation board | Slide mode (see the next item); the icon turns to the accent colour while on |
   | Trash can | Delete this video's slide images (saves space); shown only when there are captured images |
+  | Magnifier | Search subtitles (see "Search subtitles" below); the icon turns to the accent colour while open |
   | Download SRT / VTT | Download the subtitle file (following the current subtitle mode; "none" downloads bilingual) |
   | Export arrow | Export this video to import on another computer (shown once translated) |
 - Slide mode (the presentation-board icon in the toolbar): the video stays on one subtitle's moment, and you step through subtitles with the ‹ › buttons on either side of the player (or ← →, PageUp / PageDown, so presentation clickers work too); the top left shows "current / total", and audio is muted while stepping. Press the button again to leave, staying where you were.
@@ -27,6 +28,22 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
   - Reprocessing a video (the sentences change) captures them again; exports do not include these images, so another computer captures them the first time it enters slide mode.
   - When you no longer need them, press the trash-can icon in the toolbar (the confirmation shows how much space they use); slide mode captures them again next time.
 - The subtitle list (below the player, expandable) follows playback: the line being played is highlighted and scrolled to the middle, and clicking any line jumps there. Scrolling through the list yourself pauses following; press "Back to current line" at the bottom right to return to the line being played.
+- Search subtitles (the magnifier in the toolbar): find words in the subtitle list; matches are highlighted (the current one darker, with an outline) and the list scrolls to that line.
+
+  ![Search subtitles](https://raw.githubusercontent.com/codemee/tubetran/main/docs/images/search.png)
+
+  | Action | What it does |
+  |---|---|
+  | Type a word | Searches when you stop typing and goes to the first match after the current playback position (only the list scrolls; the video stays); "match / total" is shown on the right |
+  | ⌃ ⌄ or Shift+Enter / Enter | Previous / next match, wrapping around |
+  | 不分大小寫 (Ignore case) | On by default |
+  | 完整單字 (Whole word) | Match whole English words only (`cat` won't find `catalog`); Chinese has no spaces between words, so it is not affected |
+  | 規則表達式 (Regular expression) | Search with a regular expression (e.g. `v\d+`); the box turns red if it is invalid |
+  | 影片也跳過去 (Jump the video too) | When on, previous / next also jumps the video to that line (in slide mode, to that slide); when off, only the list scrolls, and "Back to current line" takes you back |
+  | Esc / press the magnifier again | Close the search and clear the highlights |
+
+  - Only the text shown in the list is searched: bilingual mode searches both the original and the translation; original or translation mode searches only that one.
+  - The options are remembered on this computer; the search text is kept when you switch videos.
 - Fullscreen: use the fullscreen button at the player's bottom right (next to the YouTube wordmark), or press `F`. After you press the fullscreen button, focus returns to the player, so ← → seek right away (in slide mode they go to the previous / next line). In the desktop app `F` also works after you have clicked the video (in browser mode, click outside the video first so the page can receive `F`). The fullscreen button shows and hides together with YouTube's own controls: the desktop app detects whether the "YouTube" wordmark at the bottom right of the control bar is visible; a browser cannot, so there the button stays visible while the pointer is over the player.
 - Translated lines are usable while translation is still running; the rest continues in the background, with a clear progress bar. For videos without captions, the stages of speech recognition are listed under the progress bar (download audio, download the speech model [first time only], load the model, decode audio and detect language, transcribe), with completed stages ticked and the current one showing its percentage.
 - A library on the right lists translated, in-progress, interrupted and failed videos; click to watch again (click an interrupted or failed video, or press ↻ on it, to retry from where it stopped), delete the cache if you like (pressing ✕ on a video that is still processing cancels it and cleans up). The last playback position is remembered so you can pick up where you left off. Each item, and the title under the player, has an "Open on YouTube" link for comments and related videos (the desktop app opens it in your default browser).

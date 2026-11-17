@@ -161,6 +161,27 @@ def test_failed_translation_can_be_retried():
         assert i18n.count(key) == 2, key
 
 
+def test_subtitle_search_panel():
+    """搜尋字幕：放大鏡在「刪除投影片」旁邊，展開面板有不分大小寫／完整單字／規則表達式、上一個／下一個、
+    以及「影片也跳過去」選項；命中的地方在字幕清單中反白。"""
+    html = (config.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    bar = html[html.index('id="bar"'):html.index('id="transcript"')]
+    assert bar.index('id="slide-delete"') < bar.index('id="search-toggle"') < bar.index('id="dl-srt"')
+    for el in ("search-panel", "search-q", "search-prev", "search-next", "search-ci", "search-word", "search-re", "search-seek"):
+        assert f'id="{el}"' in bar, el
+    assert '<script src="/static/search.js">' in html
+    js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    assert "lines(s, listMode(), i)" in js                   # 清單才標示；影片上的字幕不標
+    assert '$("search-seek").checked' in js and "player.seekTo(segs[i].start" in js
+    assert "searchOpening" in js                             # 搜尋展開清單時停在命中那行，不跳回播放位置
+    css = _css()
+    assert re.search(r"\.row mark\.cur\s*\{", css)
+    assert css.count("--search-cur:") == 3                    # 淺色、深色（系統）、深色（手動）都有
+    i18n = (config.STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
+    for key in ("search:", "search_ci:", "search_word:", "search_re:", "search_seek:", "search_none:", "search_bad:"):
+        assert i18n.count(key) == 2, key
+
+
 def test_switching_videos_leaves_slide_mode():
     """在投影片模式中切到其他影片（或刪除、重新處理目前這支）要退出投影片模式，新影片用正常的播放器。"""
     js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")

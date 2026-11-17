@@ -119,21 +119,25 @@ $("lang-btn").addEventListener("click", () => {
 // 翻譯進行中時，尚未翻好的句子沒有 trans：先顯示原文，譯文處標示「翻譯中…」
 // m：顯示模式。「無」（練聽力）只影響影片上的字幕；下方的字幕清單照樣顯示雙語，方便事後對照
 const listMode = () => (mode === "none" ? "both" : mode);
-function lines(s, m = listMode()) {
-  const o = `<div>${esc(s.text)}</div>`;
+// i：字幕清單裡的第幾則（>= 0 時，搜尋命中的地方會標示出來；影片上的字幕不標）
+function lines(s, m = listMode(), i = -1) {
+  const h = (f, text) => (i >= 0 ? searchHtml(i, f, text) : esc(text));
+  const o = `<div>${h("o", s.text)}</div>`;
   const has = s.trans != null;
-  const tr = has ? `<div class="t">${esc(s.trans)}</div>` : `<div class="t pending">${t("pending_tr")}</div>`;
+  const tr = has ? `<div class="t">${h("t", s.trans)}</div>` : `<div class="t pending">${t("pending_tr")}</div>`;
   if (m === "none") return "";
   if (m === "orig") return o;
-  if (m === "trans") return has ? tr : `<div class="pending">${esc(s.text)}</div>`;
+  if (m === "trans") return has ? tr : `<div class="pending">${h("o", s.text)}</div>`;
   return o + tr;
 }
 
 function renderList() {
   const box = $("list"), top = box.scrollTop; // 部分字幕持續更新時，保留清單的捲動位置
+  computeHits();
   box.innerHTML = segs
-    .map((s, i) => `<div class="row" data-i="${i}"><small>${fmt(s.start)}</small>${lines(s)}</div>`)
+    .map((s, i) => `<div class="row" data-i="${i}"><small>${fmt(s.start)}</small>${lines(s, listMode(), i)}</div>`)
     .join("");
+  showSearchCount();
   box.scrollTop = top;
   const n = segs.filter((s) => s.trans != null).length;
   $("transcript-title").textContent = n < segs.length
@@ -225,8 +229,126 @@ $("list").addEventListener("scroll", () => {
   syncFollowButton();
 });
 $("follow").addEventListener("click", () => setFollow(true));
-// 展開清單時立刻跳到目前這句（不要停在開頭）
-$("transcript").addEventListener("toggle", () => { if ($("transcript").open) setFollow(true, false); else syncFollowButton(); });
+// 展開清單時立刻跳到目前這句（不要停在開頭）。搜尋跳到命中項目時展開的除外：要停在命中的那一行
+let searchOpening = false;
+$("transcript").addEventListener("toggle", () => {
+  if (searchOpening) { searchOpening = false; syncFollowButton(); return; }
+  if ($("transcript").open) setFollow(true, false); else syncFollowButton();
+});
+
+// ── 搜尋字幕：搜尋字幕清單上顯示的文字（原文、譯文），命中的地方反白；上一個／下一個跳到該行 ──
+// 比對邏輯在 search.js。srch.hits：每個命中屬於第幾則字幕（依清單順序）；srch.ranges：「則＋欄位」→ 命中範圍與編號起點
+const srch = { built: null, hits: [], ranges: new Map(), cur: -1 };
+const SEARCH_OPTS = { ci: "search-ci", word: "search-word", re: "search-re", seek: "search-seek" };
+try { // 選項記在這台電腦上（下次開啟沿用）
+  const saved = JSON.parse(localStorage.getItem("search-opts") || "{}");
+  for (const [k, id] of Object.entries(SEARCH_OPTS)) if (typeof saved[k] === "boolean") $(id).checked = saved[k];
+} catch (_) {}
+
+// 清單上看得到的欄位才搜尋：o＝原文、t＝譯文（「譯文」模式中尚未翻好的句子顯示原文）
+function searchFields(s, m = listMode()) {
+  if (m === "orig") return [["o", s.text]];
+  if (m === "trans") return [s.trans != null ? ["t", s.trans] : ["o", s.text]];
+  return s.trans != null ? [["o", s.text], ["t", s.trans]] : [["o", s.text]];
+}
+
+function computeHits() {
+  srch.built = $("search-panel").hidden ? null : SubSearch.buildSearch($("search-q").value, {
+    ignoreCase: $("search-ci").checked, wholeWord: $("search-word").checked, regex: $("search-re").checked,
+  });
+  srch.hits = []; srch.ranges = new Map();
+  const re = srch.built?.re;
+  if (re) segs.forEach((s, i) => searchFields(s).forEach(([f, text]) => {
+    const r = SubSearch.findRanges(text, re);
+    if (!r.length) return;
+    srch.ranges.set(i + f, { base: srch.hits.length, r });
+    r.forEach(() => srch.hits.push(i));
+  }));
+  if (srch.cur >= srch.hits.length) srch.cur = srch.hits.length - 1;
+}
+
+function searchHtml(i, f, text) {
+  const e = srch.ranges.get(i + f);
+  if (!e) return esc(text);
+  return SubSearch.highlight(text, e.r, esc, (k) => ` data-m="${e.base + k}"${e.base + k === srch.cur ? ' class="cur"' : ""}`);
+}
+
+function showSearchCount() {
+  const el = $("search-count"), q = $("search-q");
+  const bad = !!srch.built?.error;
+  q.classList.toggle("bad", bad);
+  q.title = bad ? srch.built.error : "";
+  el.textContent = !srch.built ? "" : bad ? t("search_bad")
+    : !srch.hits.length ? t("search_none") : `${srch.cur >= 0 ? srch.cur + 1 : "–"} / ${srch.hits.length}`;
+  $("search-prev").disabled = $("search-next").disabled = !srch.hits.length;
+}
+
+// 跳到第 k 個命中：反白成「目前」、清單捲到那一行；seek 時影片也跳到那一則字幕
+function gotoHit(k, seek = $("search-seek").checked) {
+  const n = srch.hits.length;
+  if (!n) return;
+  srch.cur = ((k % n) + n) % n;
+  document.querySelector("#list mark.cur")?.classList.remove("cur");
+  const mark = document.querySelector(`#list mark[data-m="${srch.cur}"]`);
+  mark?.classList.add("cur");
+  showSearchCount();
+  const i = srch.hits[srch.cur];
+  if (seek && player?.seekTo) {
+    if (slideMode) gotoSlide(i); else player.seekTo(segs[i].start, true);
+    follow = true; // 播放位置就是命中的那一則：清單接著跟隨播放
+  } else follow = false;   // 只是看看：清單停在命中的那一行，出現「回到目前字幕」
+  if (!$("transcript").open) { searchOpening = true; $("transcript").open = true; }
+  const row = mark?.closest(".row"), box = $("list");
+  if (row) {
+    autoScrollUntil = Date.now() + 1500;
+    box.scrollTo({ top: row.offsetTop - box.clientHeight / 2 + row.offsetHeight / 2, behavior: "smooth" });
+  }
+  syncFollowButton();
+}
+
+// 搜尋字串或選項改了：重新比對，跳到目前播放位置之後的第一個命中（只捲清單，不動影片）
+let searchTimer = 0;
+function runSearch() {
+  clearTimeout(searchTimer); searchTimer = 0;
+  srch.cur = -1;
+  renderList();
+  if (!srch.hits.length) return;
+  const from = Math.max(0, listCur);
+  const k = srch.hits.findIndex((i) => i >= from);
+  gotoHit(k < 0 ? 0 : k, false);
+}
+function setSearchOpen(open) {
+  $("search-panel").hidden = !open;
+  $("search-toggle").setAttribute("aria-pressed", String(open));
+  if (open) { $("search-q").focus(); $("search-q").select(); }
+  if (segs.length) runSearch(); // 關閉時清掉反白
+}
+$("search-toggle").addEventListener("click", () => setSearchOpen($("search-panel").hidden));
+$("search-q").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 200); });
+$("search-q").addEventListener("keydown", (e) => {
+  if (e.isComposing || e.keyCode === 229) return; // 輸入法選字中
+  if (e.key === "Enter") {
+    e.preventDefault();
+    if (searchTimer) runSearch(); // 還沒比對完就按 Enter：先比對
+    gotoHit(srch.cur + (e.shiftKey ? -1 : 1));
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    setSearchOpen(false);
+    $("search-toggle").focus();
+  }
+});
+$("search-prev").addEventListener("click", () => gotoHit(srch.cur - 1));
+$("search-next").addEventListener("click", () => gotoHit(srch.cur + 1));
+for (const [k, id] of Object.entries(SEARCH_OPTS)) {
+  $(id).addEventListener("change", () => {
+    try {
+      const o = {};
+      for (const [kk, ii] of Object.entries(SEARCH_OPTS)) o[kk] = $(ii).checked;
+      localStorage.setItem("search-opts", JSON.stringify(o));
+    } catch (_) {}
+    if (k !== "seek") runSearch();
+  });
+}
 
 function tick() {
   if (!player || !player.getCurrentTime || !segs.length) return;
@@ -745,7 +867,7 @@ async function pollJob(id, my) {
 
 function resetView() {
   segs = []; videoId = null; current = -1; listCur = -1; follow = true; partialShown = false;
-  slideIdx = -1;
+  slideIdx = -1; srch.cur = -1; // 搜尋字串與面板保留，換到下一支影片照樣搜尋
   if (slideMode) {
     // 換影片（或刪除、重新處理目前這支）：退出投影片模式。投影片模式的播放器沒有控制列、而且靜音，
     // 直接拆掉；接著載入的影片會建立一個正常的播放器（有控制列、有聲音）。
