@@ -7,6 +7,7 @@
   const maxBtn = $("win-max");
   let api = null;
   let maximized = false;
+  const isWin = /Windows/.test(navigator.userAgent);
 
   function paint() {
     root.classList.toggle("maxed", maximized);
@@ -16,8 +17,9 @@
     // 最大化時不能拖曳移動（雙擊空白處或按還原鈕回到原本大小）
     // 頁首空白處與左上角的圖示都能拖曳（pywebview 只認「直接點到」帶這個 class 的元素，裡面的輸入框與按鈕不受影響）。
     // 最大化時不能拖曳移動（雙擊空白處或按還原鈕回到原本大小）
-    topbar.classList.toggle("pywebview-drag-region", !maximized);
-    document.querySelector(".brand").classList.toggle("pywebview-drag-region", !maximized);
+    // 只有 Windows 靠 pywebview 的拖曳區域；其他系統（Qt）它搬不動視窗，由 setupDrag 自己搬
+    topbar.classList.toggle("pywebview-drag-region", isWin && !maximized);
+    document.querySelector(".brand").classList.toggle("pywebview-drag-region", isWin && !maximized);
     $("resize-handles").hidden = maximized;
   }
 
@@ -75,6 +77,11 @@
       if (!down || begun) return;
       if (Math.abs(e.screenX - down.x) + Math.abs(e.screenY - down.y) >= 4) { begun = true; api.window_move_begin(); }
     });
+    if (!isWin) {
+      window.addEventListener("mousemove", (e) => {
+        if (down && begun && e.buttons & 1) api.window_move_to(e.screenX - down.x, e.screenY - down.y);
+      });
+    }
     const finish = () => { if (begun) api.window_move_end(); down = null; begun = false; };
     window.addEventListener("mouseup", finish);
     window.addEventListener("blur", finish);

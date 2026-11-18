@@ -207,6 +207,7 @@ class _DesktopApi:
         self._normal_rect = None
         self._resize = None
         self._moving = False
+        self._move_origin = None
         self._port = 0  # 本機後端的埠號（save_download 向它取得要下載的內容）
         self._title = INITIAL_WINDOW_TITLE  # 目前的視窗標題（_hwnd 取不到控制代碼時用來找視窗）
 
@@ -419,13 +420,50 @@ class _DesktopApi:
     def window_move_begin(self):
         """頁首拖曳（由 pywebview 在頁面裡一步步搬動視窗）開始：廣播「視窗開始被移動」。
         FancyZones 靠這個事件才會顯示區域、在放開時把視窗吸進去（Shift 拖曳）。"""
+        if sys.platform != "win32":  # 其他系統：記下起點，之後由 window_move_to 搬動（pywebview 的拖曳區域在 Qt 上無效）
+            if self._custom and not self._maximized and not self._fullscreen and self._window is not None:
+                if not self._system_move():  # 優先交給視窗管理員搬（Wayland 唯一可行的方式）；不行才自己 move
+                    self._move_origin = (getattr(self._window, "x", 0), getattr(self._window, "y", 0))
+            return
         hwnd = self._hwnd() if self._custom and not self._maximized and not self._fullscreen else None
         if hwnd and not self._moving:
             self._moving = True
             winctl.notify_move_size(hwnd, True)
 
+    def _system_move(self):
+        """Qt 的 QWindow.startSystemMove：Wayland 不讓應用程式自己 move 視窗，要請合成器搬；X11 也支援。
+        必須在 GUI 執行緒、按鍵還按著時呼叫（js_api 在別的執行緒，所以用排入佇列的方式轉過去）。"""
+        try:
+            from qtpy import QtCore
+            native = self._window.native
+            handle = native.windowHandle()
+            if handle is None or not hasattr(handle, "startSystemMove"):
+                return False
+
+            class _Mover(QtCore.QObject):
+                @QtCore.Slot()
+                def go(self):
+                    handle.startSystemMove()
+
+            mover = _Mover()
+            mover.moveToThread(native.thread())
+            self._mover = mover  # 佇列執行前不能被回收
+            QtCore.QMetaObject.invokeMethod(mover, "go", QtCore.Qt.ConnectionType.QueuedConnection)  # PyQt6 成功也回傳 None
+            return True
+        except Exception as e:  # noqa: BLE001 — 不是 Qt 後端或取不到視窗：退回自己 move
+            print(f"startSystemMove 不可用：{e}", file=sys.stderr)
+            return False
+
+    def window_move_to(self, dx, dy):
+        """非 Windows 的無框視窗拖曳：dx、dy 是游標自按下以來的位移（邏輯像素），視窗從 window_move_begin 的位置跟著移。"""
+        origin = getattr(self, "_move_origin", None)
+        if origin is None or sys.platform == "win32" or self._window is None:
+            return
+        self._window.move(int(origin[0] + float(dx)), int(origin[1] + float(dy)))
+
     def window_move_end(self):
         """拖曳結束：廣播「視窗結束被移動」，FancyZones 此時才會把視窗吸進區域並套用區域的大小。"""
+        self._move_origin = None
         if self._moving:
             self._moving = False
             hwnd = self._hwnd()
@@ -637,4 +675,10 @@ def main(argv: list[str] | None = None) -> int:
         return selftest()
     if args.server:
         return run_server(args.host, args.port)
-    return run_desktop(native_titlebar=args.native_titlebar)
+    code = run_desktop(native_titlebar=args.native_titlebar)
+    if sys.platform.startswith("linux"):
+        # Qt WebEngine 在直譯器收尾時可能卡死（視窗關了、後端也停了，終端機卻回不到 shell），資料都已寫完，直接結束行程
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(code)
+    return code

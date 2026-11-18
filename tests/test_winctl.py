@@ -364,7 +364,7 @@ def test_js_api_does_not_expose_internal_state():
     """pywebview 會把 js_api 的公開屬性都暴露給網頁，內部狀態必須是底線開頭。"""
     public = {n for n in dir(cli._DesktopApi(True)) if not n.startswith("_")}
     assert public == {"open_external", "save_download", "set_fullscreen", "cursor_pos", "logo_fraction", "fullscreen_key_down", "window_state", "window_minimize", "window_toggle_maximize",
-                      "window_move_begin", "window_move_end", "window_close", "resize_begin", "resize_to", "resize_end",
+                      "window_move_begin", "window_move_to", "window_move_end", "window_close", "resize_begin", "resize_to", "resize_end",
                       "set_window_title"}
 
 
