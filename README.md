@@ -132,6 +132,17 @@ uv tool install --python 3.12 "tubetran[desktop] @ git+https://github.com/codeme
 
 第一次執行時，在網頁右上角的[設定面板](#設定面板)輸入 Claude API 金鑰即可（沒有金鑰時會自動展開）；也可以改設同名的環境變數 `ANTHROPIC_API_KEY`。更新用 `uv tool upgrade tubetran`（從本機資料夾安裝的話，改完程式後用 `uv tool install --python 3.12 --reinstall ".[desktop]"`），移除用 `uv tool uninstall tubetran`。
 
+### Linux 桌面模式
+
+| 做法 | 指令 |
+|---|---|
+| 建議：Qt 後端（不需系統套件） | `uv tool install --python 3.12 "tubetran[desktop-qt]"`；從原始碼則 `uv sync --extra desktop-qt` 後 `uv run tubetran` |
+| GTK 後端 | 先裝系統套件（Debian／Ubuntu：`sudo apt install libgirepository1.0-dev libcairo2-dev pkg-config python3-dev gir1.2-webkit2-4.1`），再 `uv pip install pygobject` |
+| 不開視窗 | `tubetran --server`，用瀏覽器開 http://127.0.0.1:8000/ |
+
+- 出現 `[pywebview] GTK cannot be loaded`：沒有 GTK 或 Qt 後端，改用上面的 `desktop-qt`。
+- Qt 視窗開不起來：依錯誤訊息補裝系統的 xcb 函式庫（例如 `libxcb-cursor0`）。
+
 ### 從原始碼執行（開發用）
 
 ```powershell

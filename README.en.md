@@ -132,6 +132,17 @@ uv tool install --python 3.12 "tubetran[desktop] @ git+https://github.com/codeme
 
 On the first run, enter your Claude API key in the [settings panel](#settings-panel) at the top right of the page (it opens automatically when no key is set); you can also set the `ANTHROPIC_API_KEY` environment variable instead. Upgrade with `uv tool upgrade tubetran` (if installed from a local folder, use `uv tool install --python 3.12 --reinstall ".[desktop]"` after changing code); remove with `uv tool uninstall tubetran`.
 
+### Desktop mode on Linux
+
+| Option | Command |
+|---|---|
+| Recommended: Qt backend (no system packages) | `uv tool install --python 3.12 "tubetran[desktop-qt]"`; from source: `uv sync --extra desktop-qt`, then `uv run tubetran` |
+| GTK backend | Install system packages first (Debian/Ubuntu: `sudo apt install libgirepository1.0-dev libcairo2-dev pkg-config python3-dev gir1.2-webkit2-4.1`), then `uv pip install pygobject` |
+| No window | `tubetran --server`, then open http://127.0.0.1:8000/ in a browser |
+
+- `[pywebview] GTK cannot be loaded`: no GTK or Qt backend is available; use `desktop-qt` above.
+- Qt window won't open: install the missing system xcb libraries named in the error (e.g. `libxcb-cursor0`).
+
 ### Run from source (development)
 
 ```powershell

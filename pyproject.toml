@@ -51,6 +51,10 @@ packages = ["tubetran"]  # tubetran/static 在套件內，會一併打包
 desktop = [
     "pywebview>=6.2.1",
 ]
+# Linux 建議用這個：pywebview 的 GTK 後端要系統套件（PyGObject、WebKit2GTK），Qt 後端直接從 PyPI 安裝
+desktop-qt = [
+    "pywebview[qt]>=6.2.1",
+]
 
 [dependency-groups]
 dev = [

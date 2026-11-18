@@ -527,14 +527,26 @@ def _report_desktop_failure(exc: BaseException) -> int:
     return 1
 
 
+LINUX_BACKEND_HINT = (
+    "Linux 的桌面視窗需要 GTK 或 Qt 後端，建議用 Qt（不需系統套件）：\n"
+    "  uv tool install --python 3.12 \"tubetran[desktop-qt]\"\n"
+    "  或在專案內 uv sync --extra desktop-qt，再 uv run tubetran\n"
+    "  （GTK 則要系統安裝 PyGObject 與 WebKit2GTK，例如 Debian／Ubuntu：sudo apt install libgirepository1.0-dev libcairo2-dev pkg-config python3-dev gir1.2-webkit2-4.1，再 uv pip install pygobject）\n"
+    "若 Qt 視窗開不起來，依錯誤訊息補裝系統的 xcb 函式庫（例如 libxcb-cursor0）。\n"
+    "只想用瀏覽器的話可改用：tubetran --server\n"
+    "Linux desktop mode needs a GTK or Qt backend. Easiest: install the Qt extra (tubetran[desktop-qt]) or use --server."
+)
+
+
 def run_desktop(native_titlebar: bool = False) -> int:
     _unblock_bundled_files()  # 必須在載入 pythonnet（pywebview 啟動時）之前
     try:
         import webview
     except ImportError:
-        print("桌面模式需要 pywebview。安裝時加上 desktop 額外套件：\n"
-              "  uv tool install --python 3.12 \"tubetran[desktop]\"（從原始碼資料夾則是 uv tool install --python 3.12 \".[desktop]\"）\n"
-              "  或在專案內 uv sync --extra desktop\n"
+        extra = "desktop-qt" if sys.platform.startswith("linux") else "desktop"
+        print("桌面模式需要 pywebview。安裝時加上 " + extra + " 額外套件：\n"
+              f"  uv tool install --python 3.12 \"tubetran[{extra}]\"（從原始碼資料夾則是 uv tool install --python 3.12 \".[{extra}]\"）\n"
+              f"  或在專案內 uv sync --extra {extra}，之後 uv run tubetran（或一次性：uv run --extra {extra} tubetran）\n"
               "只想用瀏覽器的話可改用：tubetran --server", file=sys.stderr)
         return 1
     _enable_per_monitor_dpi()
@@ -568,6 +580,8 @@ def run_desktop(native_titlebar: bool = False) -> int:
             icon=str(config.STATIC_DIR / "logo" / ("tubetran-macos.png" if sys.platform == "darwin" else "tubetran.ico")),
         )
     except Exception as e:  # noqa: BLE001
+        if sys.platform.startswith("linux"):
+            print(f"\n{LINUX_BACKEND_HINT}\n", file=sys.stderr)  # 最常見：沒有 GTK／Qt 後端
         if not config.FROZEN:
             raise  # 從原始碼執行時直接看完整的追蹤訊息
         return _report_desktop_failure(e)
