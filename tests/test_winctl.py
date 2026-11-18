@@ -364,4 +364,23 @@ def test_js_api_does_not_expose_internal_state():
     """pywebview 會把 js_api 的公開屬性都暴露給網頁，內部狀態必須是底線開頭。"""
     public = {n for n in dir(cli._DesktopApi(True)) if not n.startswith("_")}
     assert public == {"open_external", "save_download", "set_fullscreen", "cursor_pos", "logo_fraction", "fullscreen_key_down", "window_state", "window_minimize", "window_toggle_maximize",
-                      "window_move_begin", "window_move_end", "window_close", "resize_begin", "resize_to", "resize_end"}
+                      "window_move_begin", "window_move_end", "window_close", "resize_begin", "resize_to", "resize_end",
+                      "set_window_title"}
+
+
+def test_set_window_title_syncs_window_and_rejects_bad_input():
+    """英文語系時視窗標題要跟著網頁變成 TubeTran；空字串、過長、視窗還沒建立都不處理。"""
+    class FakeWindow:
+        title = None
+
+        def set_title(self, t):
+            self.title = t
+
+    api = cli._DesktopApi(False)
+    assert api._title == cli.INITIAL_WINDOW_TITLE == "TubeTran"
+    assert api.set_window_title("TubeTran") is False  # 視窗還沒建立
+    api._window = FakeWindow()
+    assert api.set_window_title("  ") is False and api.set_window_title("x" * 101) is False
+    assert api._window.title is None
+    assert api.set_window_title("水管譯工") is True
+    assert api._window.title == "水管譯工" and api._title == "水管譯工"

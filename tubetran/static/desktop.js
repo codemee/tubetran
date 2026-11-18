@@ -1,4 +1,4 @@
-// 桌面版（pywebview，Windows 無框視窗）：自製視窗按鈕、拖曳區域、邊緣縮放。
+// 桌面版（pywebview，Windows／Linux 無框視窗）：自製視窗按鈕、拖曳區域、邊緣縮放。
 // 在瀏覽器（伺服器模式）裡沒有 window.pywebview，這個檔案什麼都不會做。
 // 依賴 app.js 的 $、saveProgress 與 i18n.js 的 t()。
 (function () {

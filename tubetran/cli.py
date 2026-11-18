@@ -24,6 +24,8 @@ import webbrowser
 from tubetran import __version__, config, winctl
 
 WINDOW_TITLE = "水管譯工"
+# 桌面視窗建立時的標題。真正的標題由網頁依語系決定（英文 TubeTran／中文 水管譯工），載入後用 set_window_title 同步
+INITIAL_WINDOW_TITLE = "TubeTran"
 # 視窗的最小尺寸（邏輯像素）。要夠小：視窗管理程式（平鋪／貼齊）會直接指定位置與大小，
 # 比最小值小的要求會被擋住，結果是「位置對了、大小沒變」。窄到這個程度版面仍可用（頂欄換成兩列、內容單欄）。
 # 寬度 400：頂欄第一列要放得下圖示＋設定／語言／主題鈕＋視窗按鈕（約 362px），再窄就會換行、按鈕重疊。
@@ -56,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="伺服器模式的監聽位址，預設 127.0.0.1（要讓區網其他裝置連線請用 0.0.0.0）")
     p.add_argument("--port", type=int, default=8000, help="伺服器模式的埠號，預設 8000")
     p.add_argument("--native-titlebar", action="store_true",
-                   help="桌面模式使用系統標題列（預設在 Windows 上是無框視窗加自製視窗按鈕）")
+                   help="桌面模式使用系統標題列（預設在 Windows 與 Linux 上是無框視窗加自製視窗按鈕）")
     p.add_argument("-V", "--version", action="version", version=f"TubeTran {__version__}")
     p.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)  # 檢查打包是否完整
     return p
@@ -206,6 +208,17 @@ class _DesktopApi:
         self._resize = None
         self._moving = False
         self._port = 0  # 本機後端的埠號（save_download 向它取得要下載的內容）
+        self._title = INITIAL_WINDOW_TITLE  # 目前的視窗標題（_hwnd 取不到控制代碼時用來找視窗）
+
+    def set_window_title(self, title):
+        """網頁依語系切換標題時同步到桌面視窗：pywebview 不會自己跟著 document.title 走，
+        否則英文語系下視窗標題仍是中文。"""
+        title = str(title).strip()
+        if self._window is None or not title or len(title) > 100:
+            return False
+        self._window.set_title(title)
+        self._title = title
+        return True
 
     def open_external(self, url):
         """用系統預設瀏覽器開啟連結。WebView 裡的 target="_blank" 不一定會開外部瀏覽器，所以由這裡處理。
@@ -291,10 +304,12 @@ class _DesktopApi:
 
     # ── 自製視窗按鈕（只有無框視窗才會用到）──
     def _hwnd(self):
+        if sys.platform != "win32":  # 其他系統沒有 HWND：最大化與縮放改走 pywebview 的視窗 API（見 _portable_*）
+            return None
         try:
             return int(self._window.native.Handle.ToInt64())
         except Exception:  # noqa: BLE001 — 取不到就用標題找
-            return winctl.find_window(WINDOW_TITLE)
+            return winctl.find_window(self._title)
 
     def _sync_maximized(self):
         """「最大化」有兩種：我們自己鋪滿工作區（記在旗標裡），以及系統的最大化（Win+↑、拖到螢幕上緣貼齊、
@@ -380,7 +395,14 @@ class _DesktopApi:
         """最大化／還原。最大化是鋪滿螢幕「工作區」（不蓋住工作列），由我們自己記住原本的範圍。"""
         self._sync_maximized()
         hwnd = self._hwnd() if self._custom else None
-        if hwnd:
+        if self._custom and sys.platform != "win32" and self._window is not None:
+            # Linux 無框視窗：交給視窗管理員最大化／還原（旗標只記我們自己的操作，外部改變同步不到）
+            try:
+                (self._window.restore if self._maximized else self._window.maximize)()
+                self._maximized = not self._maximized
+            except Exception as e:  # noqa: BLE001 — 後端不支援就維持原狀
+                print(f"無法切換最大化：{e}", file=sys.stderr)
+        elif hwnd:
             if winctl.is_zoomed(hwnd):  # 系統最大化：用系統的還原（回到最大化之前的位置與大小）
                 winctl.restore(hwnd)
                 self._maximized = False
@@ -417,6 +439,11 @@ class _DesktopApi:
     # ── 邊緣縮放：頁面在 pointerdown 時 begin，移動時回報位移（實體像素），放開時 end ──
     def resize_begin(self, edge, dpr=1.0):
         self._sync_maximized()
+        if sys.platform != "win32":
+            if self._custom and not self._maximized and self._window is not None and edge in winctl.EDGES:
+                w = self._window
+                self._resize = {"rect": (w.x, w.y, w.width, w.height), "dpr": max(0.5, min(float(dpr), 8.0)), "seq": 0}
+            return
         hwnd = self._hwnd() if self._custom and not self._maximized else None
         if hwnd and edge in winctl.EDGES:
             self._resize = {"hwnd": hwnd, "rect": winctl.get_rect(hwnd), "dpr": max(0.5, min(float(dpr), 8.0)), "seq": 0}
@@ -426,6 +453,16 @@ class _DesktopApi:
         if not rs or edge not in winctl.EDGES or int(seq) <= rs["seq"]:  # 橋接的呼叫可能亂序，舊的直接丟掉
             return
         rs["seq"] = int(seq)
+        if sys.platform != "win32":
+            # 網頁回報的是實體像素；pywebview 在 Linux 用邏輯像素，所以除回縮放比例
+            k = rs["dpr"]
+            x, y, w, h = winctl.resized_rect(rs["rect"], edge, round(dx / k), round(dy / k), *MIN_WINDOW_SIZE)
+            from webview.window import FixPoint
+
+            # 拖左／上邊時，右／下邊要固定不動
+            fix = (FixPoint.EAST if "w" in edge else FixPoint.WEST) | (FixPoint.SOUTH if "n" in edge else FixPoint.NORTH)
+            self._window.resize(w, h, fix)
+            return
         min_w, min_h = (int(v * rs["dpr"]) for v in MIN_WINDOW_SIZE)
         winctl.set_rect(rs["hwnd"], *winctl.resized_rect(rs["rect"], edge, dx, dy, min_w, min_h))
 
@@ -558,15 +595,16 @@ def run_desktop(native_titlebar: bool = False) -> int:
     if not backend.start():
         return _error_window(webview, f"後端啟動失敗，詳細原因請看記錄檔：\n{config.DATA_DIR / 'tubetran.log'}")
     try:
-        # 無框視窗（自製標題列與視窗按鈕）目前只在 Windows 上做並測試過；其他系統維持系統標題列
-        custom = sys.platform == "win32" and not native_titlebar
+        # 無框視窗（自製標題列與視窗按鈕）：Windows 完整支援；Linux 用 pywebview 的視窗 API 實作（移動由 pywebview 的
+        # 拖曳區域處理，Wayland 不允許應用程式自己移動視窗時只能靠 --native-titlebar）。macOS 維持系統標題列
+        custom = (sys.platform == "win32" or sys.platform.startswith("linux")) and not native_titlebar
         api = _DesktopApi(custom_chrome=custom)
         api._port = port
         # easy_drag=False：預設的「頁面任何地方按住都能拖動視窗」會吃掉選取文字、拖曳進度條等操作，
         # 改成只有 .pywebview-drag-region（頁首的空白處）能拖；DIRECT_TARGET_ONLY 讓裡面的輸入框與按鈕不觸發拖曳
         webview.settings["DRAG_REGION_DIRECT_TARGET_ONLY"] = True
         api._window = webview.create_window(
-            WINDOW_TITLE, f"http://127.0.0.1:{port}/", width=1280, height=860,
+            INITIAL_WINDOW_TITLE, f"http://127.0.0.1:{port}/", width=1280, height=860,
             min_size=MIN_WINDOW_SIZE, js_api=api, frameless=custom, easy_drag=False,
         )
         api._window.events.shown += api._on_shown

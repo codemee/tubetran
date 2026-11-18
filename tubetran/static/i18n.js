@@ -305,6 +305,15 @@ function serverMsg(msg) {
   return msg;
 }
 
+// 桌面版：把網頁標題同步到視窗標題（pywebview 不會自動同步）。瀏覽器裡沒有 pywebview，什麼都不做
+function syncWindowTitle() {
+  const api = window.pywebview && window.pywebview.api;
+  if (api && api.set_window_title) {
+    try { Promise.resolve(api.set_window_title(document.title)).catch(() => {}); } catch (_) {}
+  }
+}
+window.addEventListener("pywebviewready", syncWindowTitle);
+
 // 套用靜態文字：data-i18n（文字）、data-i18n-attr="屬性:key;屬性:key"
 function applyStaticI18n() {
   const en = effLang() === "en";
@@ -312,6 +321,7 @@ function applyStaticI18n() {
   root.lang = en ? "en" : "zh-Hant";
   root.dataset.lang = en ? "en" : "zh"; // CSS 依此切換對應語系的標誌圖
   document.title = t("title");
+  syncWindowTitle();
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-attr]").forEach((el) => {
     el.dataset.i18nAttr.split(";").forEach((pair) => {
