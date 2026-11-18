@@ -207,6 +207,13 @@ def test_subtitle_bookmarks():
         assert i18n.count(key) == 2, key
 
 
+def test_untranslated_traditional_lines_are_shown_once():
+    """原文本來就是繁體中文（不需翻譯、譯文與原文相同）：雙語模式與搜尋都只算一次，不重複顯示同一句。"""
+    js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    assert 's.trans === s.text && m === "both"' in js
+    assert "s.trans !== s.text" in js
+
+
 def test_switching_videos_leaves_slide_mode():
     """在投影片模式中切到其他影片（或刪除、重新處理目前這支）要退出投影片模式，新影片用正常的播放器。"""
     js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")

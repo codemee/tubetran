@@ -170,6 +170,8 @@ def _run(job: Job):
                 data["pre_review"] = {"merged": pre["merged"], "dropped": pre["dropped"]}
             _write_json(subs_file, data)
         data.pop("fragments", None)  # 原始片段留在 subs.json（重新處理時用），翻譯結果不需要
+        # 繁體中文字幕常被標成 zh：看內容判斷，是繁體就改成 zh-Hant，後面各步驟（術語表、翻譯、標題）都會跳過，不呼叫 API
+        data["lang"] = translate.resolve_lang(data.get("lang", ""), data["segments"])
         job.done, job.total = 0, len(data["segments"])
         _set(job, "translating")
         # 術語表：先讀完整支影片整理一次，之後每批都帶上，用詞才會前後一致。存起來，中斷後續翻時沿用

@@ -6,6 +6,8 @@ def _text(seg: dict, mode: str) -> str:
         return seg["text"]
     if mode == "trans":
         return seg.get("trans") or seg["text"]
+    if seg.get("trans") == seg["text"]:  # 原文本來就是繁體中文（不需翻譯）：雙語也只寫一次
+        return seg["text"]
     return f"{seg['text']}\n{seg.get('trans') or ''}".strip()
 
 

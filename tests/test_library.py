@@ -194,6 +194,37 @@ def _fake_pipeline(monkeypatch, translate_fn):
     monkeypatch.setattr(jobs.translate, "make_glossary", lambda *a, **k: {"cgroup": "cgroup"})
 
 
+def test_traditional_chinese_tagged_zh_is_not_translated(client, tmp_path, monkeypatch):
+    """回歸：YouTube 把繁體中文字幕只標成 zh（不是 zh-TW），結果還是整支送去翻譯，浪費時間與費用。
+    看內容判斷是繁體就不能呼叫任何 API（術語表、字幕、標題）。"""
+    trad = ["台灣擁有多樣而繽紛的動植物生態。", "大部分的學生到研究室都會跟我講。", "他對於野生動物非常有興趣。"]
+    segs = [{"start": float(i), "end": i + 1.0, "text": t} for i, t in enumerate(trad)]
+    monkeypatch.setattr(jobs.subtitles, "fetch_subtitles",
+                        lambda vid: {"title": "生態研究者", "lang": "zh", "source": "manual", "segments": segs, "duration": 3})
+    monkeypatch.setattr(jobs.translate, "make_client", lambda: (_ for _ in ()).throw(AssertionError("不應呼叫翻譯 API")))
+    vid = "aaaaaaaaaaa"
+    jobs.start_job(vid)
+    assert _wait(lambda: jobs.get_job(vid).status in ("done", "error")), "逾時"
+    assert jobs.get_job(vid).status == "done", jobs.get_job(vid).error
+    data = jobs.load_result(vid)
+    assert data["lang"] == "zh-Hant" and data["title_trans"] == "生態研究者"
+    assert data["segments"] and all(s["trans"] == s["text"] for s in data["segments"])
+
+
+def test_simplified_chinese_tagged_zh_is_still_translated(client, tmp_path, monkeypatch):
+    called = []
+    _fake_pipeline(monkeypatch, lambda segments, lang, title="", client=None, on_progress=None, checkpoint=None, glossary=None:
+                   called.append(lang) or [{**s, "trans": "譯"} for s in segments])
+    simp = [{"start": 0.0, "end": 1.0, "text": "我们这个国家的经济发展很快。"}, {"start": 1.0, "end": 2.0, "text": "学习电脑编程对未来很重要。"}]
+    monkeypatch.setattr(jobs.subtitles, "fetch_subtitles",
+                        lambda vid: {"title": "t", "lang": "zh", "source": "manual", "segments": simp, "duration": 2})
+    vid = "aaaaaaaaaaa"
+    jobs.start_job(vid)
+    assert _wait(lambda: jobs.get_job(vid).status in ("done", "error")), "逾時"
+    assert jobs.get_job(vid).status == "done", jobs.get_job(vid).error
+    assert called == ["zh"]  # 簡體字幕照常翻成繁體中文
+
+
 def _wait(cond, timeout=5.0):
     import time
     end = time.time() + timeout

@@ -313,6 +313,32 @@ def test_translate_skips_traditional_chinese():
     assert out[0]["trans"] == "你好"
 
 
+def test_is_traditional_chinese_by_content():
+    assert translate.is_traditional_chinese("台灣擁有多樣而繽紛的動植物生態，大部分的學生都會跟我講")
+    assert not translate.is_traditional_chinese("我们这个国家的经济发展很快，学习电脑编程对未来很重要。")  # 簡體
+    assert not translate.is_traditional_chinese("Hello world, this is English.")
+    assert not translate.is_traditional_chinese("你好")                           # 證據太少：不貿然跳過翻譯
+    assert not translate.is_traditional_chinese("")
+    # 簡體為主、夾雜少數繁體（人名、引用）仍是簡體
+    assert not translate.is_traditional_chinese("我们这个国家的经济发展很快，学习电脑编程对未来很重要，讲台灣")
+
+
+def test_resolve_lang_treats_traditional_zh_as_skip_lang():
+    trad = [{"start": 0, "end": 1, "text": "台灣擁有多樣而繽紛的動植物生態"}, {"start": 1, "end": 2, "text": "大部分的學生都會跟我講"}]
+    simp = [{"start": 0, "end": 1, "text": "我们这个国家的经济发展很快，学习电脑编程对未来很重要。"}]
+    # YouTube 常把繁體中文字幕只標成 zh：看內容，是繁體就不需要翻譯
+    assert translate.resolve_lang("zh", trad) == "zh-Hant" and "zh-Hant" in translate.SKIP_LANGS
+    assert translate.resolve_lang("zh-HK", trad) == "zh-Hant"
+    assert translate.resolve_lang("zh", simp) == "zh"          # 簡體：照常翻成繁體中文
+    assert translate.resolve_lang("zh-Hans", simp) == "zh-Hans"
+    assert translate.resolve_lang("zh-TW", simp) == "zh-TW"    # 本來就標了繁體：不動
+    assert translate.resolve_lang("en", trad) == "en"          # 非中文：不看內容
+    assert translate.resolve_lang("", trad) == ""
+    assert translate.resolve_lang("zh", []) == "zh"
+    # 改成 zh-Hant 之後，整條翻譯流程都不呼叫 API
+    assert translate.translate_segments(trad, "zh-Hant", client=object())[0]["trans"] == trad[0]["text"]
+
+
 def test_translate_fails_after_retries():
     class Bad(FakeClient):
         def create(self, **kw):
@@ -354,3 +380,6 @@ def test_export_srt_vtt():
     assert "00:00:01,500 --> 00:00:03,250\nHi\n嗨" in export.to_srt(segs)
     assert export.to_vtt(segs, "trans").startswith("WEBVTT")
     assert "00:00:01.500 --> 00:00:03.250\n嗨" in export.to_vtt(segs, "trans")
+    # 原文本來就是繁體中文（不需翻譯，trans 與原文相同）：雙語也只寫一次
+    same = [{"start": 0, "end": 1, "text": "你好", "trans": "你好"}]
+    assert export.to_srt(same) == "1\n00:00:00,000 --> 00:00:01,000\n你好\n"

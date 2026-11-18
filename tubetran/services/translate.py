@@ -35,6 +35,40 @@ CTX_AFTER = 2     # 每批附上後面幾句當前後文（批次最後一句才
 SKIP_LANGS = {"zh-TW", "zh-Hant", "zh-Hant-TW"}
 
 
+def _han_script(ch: str) -> str | None:
+    """漢字是繁體專用（"T"）還是簡體專用（"S"）；兩邊共用的字回傳 None。
+    直接用內建編碼判斷：Big5 只收繁體、GB2312 只收簡體（及少數共用字），只在其中一邊的字就是該字體專用。"""
+    def has(codec: str) -> bool:
+        try:
+            ch.encode(codec)
+            return True
+        except UnicodeEncodeError:
+            return False
+
+    big5, gb = has("big5"), has("gb2312")
+    return "T" if big5 and not gb else "S" if gb and not big5 else None
+
+
+def is_traditional_chinese(text: str) -> bool:
+    """文字是不是繁體中文：繁體專用字夠多（至少 5 個），而且遠多於簡體專用字（5 倍以上；容許少數引用、人名）。"""
+    t = s = 0
+    for ch in text:
+        if "一" <= ch <= "鿿":
+            kind = _han_script(ch)
+            t += kind == "T"
+            s += kind == "S"
+    return t >= 5 and t >= 5 * s
+
+
+def resolve_lang(lang: str, segments: list[dict]) -> str:
+    """YouTube 常把繁體中文字幕只標成 zh（沒有 -TW、-Hant）。語言是中文時看字幕內容：
+    是繁體就改成 zh-Hant，不用翻譯（省時間、省費用）；簡體或看不出來就維持原樣，照常翻成繁體中文。"""
+    lang = lang or ""
+    if lang.split("-")[0].lower() != "zh" or lang in SKIP_LANGS:
+        return lang
+    return "zh-Hant" if is_traditional_chinese(" ".join(s["text"] for s in segments)) else lang
+
+
 def _with_context(segs: list[dict]):
     """回傳 make_payload：把「待翻譯的項目」加上前後文（標記 ctx，附上已有的譯文 tr）。
 

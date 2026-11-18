@@ -124,6 +124,7 @@ function lines(s, m = listMode(), i = -1) {
   const h = (f, text) => (i >= 0 ? searchHtml(i, f, text) : esc(text));
   const o = `<div>${h("o", s.text)}</div>`;
   const has = s.trans != null;
+  if (has && s.trans === s.text && m === "both") return o; // 原文本來就是繁體中文（不需翻譯）：雙語模式不重複顯示同一句
   const tr = has ? `<div class="t">${h("t", s.trans)}</div>` : `<div class="t pending">${t("pending_tr")}</div>`;
   if (m === "none") return "";
   if (m === "orig") return o;
@@ -432,7 +433,7 @@ try { // 選項記在這台電腦上（下次開啟沿用）
 function searchFields(s, m = listMode()) {
   if (m === "orig") return [["o", s.text]];
   if (m === "trans") return [s.trans != null ? ["t", s.trans] : ["o", s.text]];
-  return s.trans != null ? [["o", s.text], ["t", s.trans]] : [["o", s.text]];
+  return s.trans != null && s.trans !== s.text ? [["o", s.text], ["t", s.trans]] : [["o", s.text]]; // 譯文與原文相同時清單只顯示一次
 }
 
 function computeHits() {
