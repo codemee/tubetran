@@ -20,6 +20,7 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
   | Presentation board | Slide mode (see the next item); the icon turns to the accent colour while on |
   | Trash can | Delete this video's slide images (saves space); shown only when there are captured images |
   | Magnifier | Search subtitles (see "Search subtitles" below); the icon turns to the accent colour while open |
+  | Bookmark | List this video's bookmarks; click one to jump to its subtitle (see "Bookmarks" below); shown only when the video has bookmarks |
   | Download SRT / VTT | Download the subtitle file (following the current subtitle mode; "none" downloads bilingual) |
   | Export arrow | Export this video to import on another computer (shown once translated) |
 - Slide mode (the presentation-board icon in the toolbar): the video stays on one subtitle's moment, and you step through subtitles with the ‹ › buttons on either side of the player (or ← →, PageUp / PageDown, so presentation clickers work too); the top left shows "current / total", and audio is muted while stepping. Press the button again to leave, staying where you were.
@@ -44,6 +45,18 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
 
   - Only the text shown in the list is searched: bilingual mode searches both the original and the translation; original or translation mode searches only that one.
   - The options are remembered on this computer; the search text is kept when you switch videos.
+- Bookmarks: mark important lines and jump back to them with one click.
+
+  | Action | What it does |
+  |---|---|
+  | Hover a line in the subtitle list | An outlined bookmark icon (the same icon as the toolbar's bookmark button) appears at the left of that line (always faintly visible on touch devices) |
+  | Press the bookmark icon | A name box opens under that line; type a name and press Enter or ✓ to add the bookmark, Esc or ✕ to cancel (nothing is added without a name) |
+  | A line that already has a bookmark | A filled bookmark icon stays at its left and the name shows next to the time; press the icon to rename it, or press "Delete bookmark" |
+  | Bookmark button in the toolbar (next to the magnifier) | Shown only when the video has bookmarks; press it to list them all (in time order), and click one to jump the video to that line (in slide mode, to that slide) with the list scrolled to it; Esc or click elsewhere to close; hover an item and a ✕ appears at its right, press it to delete that bookmark (the list stays open; the button disappears after the last one is deleted) |
+
+  - Bookmarks are saved with the video in the local cache folder, separately for each video; they are included when you export / import a video and removed when you delete it.
+  - A bookmark is placed by the subtitle's time: if you reprocess a video and the sentences are regrouped, the bookmark lands on the line closest in time.
+  - Names are up to 40 characters, one bookmark per subtitle line, up to 200 per video.
 - Fullscreen: use the fullscreen button at the player's bottom right (next to the YouTube wordmark), or press `F`. After you press the fullscreen button, focus returns to the player, so ← → seek right away (in slide mode they go to the previous / next line). In the desktop app `F` also works after you have clicked the video (in browser mode, click outside the video first so the page can receive `F`). The fullscreen button shows and hides together with YouTube's own controls: the desktop app detects whether the "YouTube" wordmark at the bottom right of the control bar is visible; a browser cannot, so there the button stays visible while the pointer is over the player.
 - Translated lines are usable while translation is still running; the rest continues in the background, with a clear progress bar. For videos without captions, the stages of speech recognition are listed under the progress bar (download audio, download the speech model [first time only], load the model, decode audio and detect language, transcribe), with completed stages ticked and the current one showing its percentage.
 - A library on the right lists translated, in-progress, interrupted and failed videos; click to watch again (click an interrupted or failed video, or press ↻ on it, to retry from where it stopped), delete the cache if you like (pressing ✕ on a video that is still processing cancels it and cleans up). The last playback position is remembered so you can pick up where you left off. Each item, and the title under the player, has an "Open on YouTube" link for comments and related videos (the desktop app opens it in your default browser).

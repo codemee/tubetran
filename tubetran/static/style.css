@@ -312,7 +312,7 @@ body {
 }
 #slide-prep { display: none; }
 #stage.no-video .slide-nav, #stage.no-video #slide-count, #stage.no-video #slide-prep, #stage.no-video #slide-img { display: none; } /* 刪掉目前的影片後：只留「貼上網址」提示 */
-#slide-toggle[aria-pressed="true"], #search-toggle[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+#slide-toggle[aria-pressed="true"], #search-toggle[aria-pressed="true"], #bm-toggle[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 
 /* ── 處理進度（取得字幕／辨識／翻譯） ── */
 #progress { margin-top: 12px; padding: 16px 18px; border-color: var(--primary); }
@@ -412,7 +412,7 @@ body {
 #transcript[open] summary::before { transform: rotate(45deg); }
 #transcript[open] summary { border-bottom: 1px solid var(--border); }
 #list { position: relative; max-height: 380px; overflow-y: auto; }
-.row { padding: 9px 16px; cursor: pointer; border-left: 3px solid transparent; border-bottom: 1px solid var(--border); font-size: 14px; }
+.row { position: relative; padding: 9px 16px 9px 34px; cursor: pointer; border-left: 3px solid transparent; border-bottom: 1px solid var(--border); font-size: 14px; }
 .row:last-child { border-bottom: 0; }
 .row:hover { background: var(--surface-2); }
 .row.on { background: var(--hl); border-left-color: var(--primary); }
@@ -427,6 +427,59 @@ body {
 }
 #follow[hidden] { display: none; }
 .row .t { color: var(--accent); }
+/* 書籤：每行左側的書籤圖示鈕（滑過或鍵盤聚焦才浮現；觸控裝置沒有滑過，一律淡淡地顯示）；已有書籤的行固定顯示實心圖示與名稱 */
+.bm-btn {
+  position: absolute; left: 6px; top: 8px; width: 22px; height: 22px; padding: 0; display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--muted);
+  font: 700 16px/1 system-ui, sans-serif; cursor: pointer; opacity: 0; transition: opacity .12s;
+}
+.row:hover .bm-btn, .bm-btn:focus-visible, .row:focus-within .bm-btn { opacity: 1; }
+.bm-btn:hover { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.bm-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+@media (hover: none) { .bm-btn { opacity: .55; } }
+.bm-btn.on { opacity: 1; border-color: transparent; background: transparent; color: var(--primary); }
+.bm-btn.on:hover { background: var(--primary); color: var(--on-primary); }
+/* 同工具列書籤鈕的圖示：還沒有書籤是空心線條，已有書籤是實心 */
+.bm-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.bm-btn.on svg { fill: currentColor; }
+.bm-name { margin-left: 6px; padding: 0 8px; border-radius: 999px; background: var(--hl); color: var(--text); font-weight: 600; }
+.bm-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 6px; cursor: auto; }
+.bm-input {
+  flex: 1 1 160px; min-width: 0; height: 30px; padding: 0 10px; font: inherit; font-size: 14px;
+  color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+.bm-input:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.bm-edit button {
+  height: 30px; min-width: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+}
+.bm-edit .bm-ok { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 700; }
+.bm-edit .bm-del { color: var(--danger); }
+.bm-edit button:hover { border-color: var(--primary); }
+/* 工具列的書籤鈕與展開的書籤清單 */
+#bm-wrap { position: relative; }
+#bm-panel {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; min-width: 220px; max-width: min(360px, 86vw); max-height: 280px;
+  overflow-y: auto; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
+}
+.bm-row { display: flex; align-items: center; gap: 2px; }
+.bm-row:hover, .bm-row:focus-within { background: var(--hl); border-radius: 7px; }
+/* 滑過項目（或鍵盤聚焦）才浮現的刪除鈕；觸控裝置沒有滑過，一律淡淡地顯示 */
+.bm-x {
+  flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent;
+  color: var(--muted); font-size: 13px; cursor: pointer; opacity: 0; transition: opacity .12s;
+}
+.bm-row:hover .bm-x, .bm-row:focus-within .bm-x { opacity: 1; }
+.bm-x:hover, .bm-x:focus-visible { background: var(--danger); color: #fff; }
+@media (hover: none) { .bm-x { opacity: .55; } }
+.bm-item {
+  flex: 1 1 auto; min-width: 0; display: flex; gap: 10px; align-items: baseline; padding: 7px 10px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+}
+.bm-item:hover, .bm-item:focus-visible { background: var(--hl); }
+.bm-time { flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.bm-label { min-width: 0; overflow-wrap: anywhere; }
 /* 搜尋命中：一般命中淡黃底，目前這個用較深的橘色並加外框 */
 .row mark { background: var(--search-hit); color: inherit; border-radius: 3px; padding: 0 1px; }
 .row mark.cur { background: var(--search-cur); color: var(--search-cur-ink); box-shadow: 0 0 0 1.5px var(--search-cur-ring); }

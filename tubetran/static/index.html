@@ -199,6 +199,15 @@
           <!-- 放大鏡 -->
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
         </button>
+        <!-- 書籤：這支影片有書籤時才出現；按下展開書籤清單，點一個書籤跳到對應的字幕 -->
+        <div id="bm-wrap" hidden>
+          <button id="bm-toggle" class="btn icon tb" type="button" aria-pressed="false" aria-expanded="false" aria-controls="bm-panel"
+                  title="書籤" aria-label="書籤" data-i18n-attr="title:bm_tip;aria-label:bm">
+            <!-- 書籤 -->
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/></svg>
+          </button>
+          <div id="bm-panel" hidden></div>
+        </div>
         <a id="dl-srt" class="btn icon tb" href="#" data-dl title="下載 SRT" aria-label="下載 SRT" data-i18n-attr="title:dl_srt;aria-label:dl_srt">
           <!-- 下載箭頭＋格式名稱（兩顆都是下載，要分得出來） -->
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v9M8.5 7.5L12 11l3.5-3.5"/><text x="12" y="21.5">SRT</text></svg>

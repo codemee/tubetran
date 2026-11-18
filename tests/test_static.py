@@ -131,7 +131,7 @@ def test_toolbar_buttons_are_icons_with_tooltips():
     html = (config.STATIC_DIR / "index.html").read_text(encoding="utf-8")
     bar = html[html.index('id="bar"'):html.index('id="transcript"')]
     top = html[html.index('id="lib-top"'):html.index('id="lib-tools"')]
-    for area, bid in [(bar, b) for b in ("slide-toggle", "slide-delete", "dl-srt", "dl-vtt", "export-current")] + \
+    for area, bid in [(bar, b) for b in ("slide-toggle", "slide-delete", "bm-toggle", "dl-srt", "dl-vtt", "export-current")] + \
                      [(top, b) for b in ("lib-import", "lib-export")]:  # 影片庫上方的匯入／匯出全部也是
         tag = re.search(rf'<(?:button|a) id="{bid}"[^>]*>', area).group(0)
         assert "data-i18n=" not in tag, bid
@@ -179,6 +179,31 @@ def test_subtitle_search_panel():
     assert css.count("--search-cur:") == 3                    # 淺色、深色（系統）、深色（手動）都有
     i18n = (config.STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
     for key in ("search:", "search_ci:", "search_word:", "search_re:", "search_seek:", "search_none:", "search_bad:"):
+        assert i18n.count(key) == 2, key
+
+
+def test_subtitle_bookmarks():
+    """書籤：字幕清單每行左側有滑過才浮現的 + 鈕，按下可填名稱加入；搜尋鈕旁有書籤鈕（有書籤才出現），
+    展開後列出書籤，點一個跳到對應的字幕。"""
+    html = (config.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    bar = html[html.index('id="bar"'):html.index('id="transcript"')]
+    assert bar.index('id="search-toggle"') < bar.index('id="bm-wrap"') < bar.index('id="bm-toggle"') < bar.index('id="bm-panel"') < bar.index('id="dl-srt"')
+    assert re.search(r'<div id="bm-wrap" hidden>', bar)  # 沒有書籤時不顯示
+    js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    assert "/bookmarks" in js and "gotoBookmark" in js and "bmFor !== videoId" in js
+    assert 'class="bm-btn' in js and 'class="bm-edit"' in js
+    toolbar_icon = re.search(r'id="bm-toggle".*?(<svg.*?</svg>)', html, re.S).group(1)
+    assert f"const BM_ICON = '{toolbar_icon}'" in js     # 清單上的按鈕與工具列的書籤鈕同一個圖示
+    list_click = js[js.index('$("list").addEventListener("click"'):]
+    list_click = list_click[:list_click.index("\n});\n")]
+    assert list_click.index(".bm-btn") < list_click.index("player.seekTo")  # 按 + 鈕、輸入框不會跳播
+    assert 'class="bm-x"' in js and 'e.target.closest(".bm-x")' in js  # 書籤清單的項目有滑過才浮現的刪除鈕
+    css = _css()
+    assert re.search(r"\.bm-x\s*\{[^}]*opacity:\s*0", css) and re.search(r"\.bm-row:hover \.bm-x", css)
+    assert re.search(r"\.bm-btn\s*\{[^}]*opacity:\s*0", css) and re.search(r"\.row:hover \.bm-btn", css)
+    assert re.search(r"\.bm-btn\s*\{[^}]*left:\s*\d+px", css)  # 浮在左側
+    i18n = (config.STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
+    for key in ("bm:", "bm_tip:", "bm_add:", "bm_edit:", "bm_ph:", "bm_ok:", "bm_cancel:", "bm_del:"):
         assert i18n.count(key) == 2, key
 
 

@@ -131,14 +131,154 @@ function lines(s, m = listMode(), i = -1) {
   return o + tr;
 }
 
+// ── 書籤 ──
+// 每個書籤是 { t: 那一則字幕的開始秒數, name }，存在這支影片的快取資料夾（bookmarks.json）。以時間定位：
+// 重新處理後句子會變，書籤仍對到「開始時間最接近、不晚於它」的那一句。
+// 清單每一行左側有書籤圖示鈕（和工具列的書籤鈕同一個圖示；滑過才浮現，空心），按下後在該行展開名稱輸入框；
+// 已有書籤的行固定顯示實心書籤圖示與名稱，可再編輯或刪除。
+// 工具列的書籤鈕只在這支影片有書籤時出現，展開後列出全部書籤，點一個跳到對應的字幕。
+let bookmarks = [], bmFor = null, bmEditing = -1, bmDraft = "", bmFocus = false, bmSeq = 0, bmQueue = Promise.resolve();
+const BM_MAX_NAME = 40;
+const BM_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/></svg>';
+const bmNorm = (s) => s.replace(/\s+/g, " ").trim().slice(0, BM_MAX_NAME).trim();
+const bmSegIndex = (b) => Math.max(0, lastStarted(b.t + 0.01));
+
+// 第幾則字幕 → 它的書籤（兩個書籤落在同一則時，後面的為準）
+function bookmarkMap() {
+  const m = new Map();
+  if (segs.length) for (const b of bookmarks) m.set(bmSegIndex(b), b);
+  return m;
+}
+
+function rowHtml(s, i, b) {
+  const label = b ? t("bm_edit", { name: b.name }) : t("bm_add");
+  const btn = `<button type="button" class="bm-btn${b ? " on" : ""}" title="${esc(label)}" aria-label="${esc(label)}">${BM_ICON}</button>`;
+  const tag = b ? ` <span class="bm-name">${esc(b.name)}</span>` : "";
+  const edit = bmEditing === i ? `<form class="bm-edit">
+      <input class="bm-input" maxlength="${BM_MAX_NAME}" autocomplete="off" value="${esc(bmDraft)}" placeholder="${esc(t("bm_ph"))}" aria-label="${esc(t("bm_ph"))}">
+      <button type="submit" class="bm-ok" title="${esc(t("bm_ok"))}" aria-label="${esc(t("bm_ok"))}">✓</button>
+      <button type="button" class="bm-cancel" title="${esc(t("bm_cancel"))}" aria-label="${esc(t("bm_cancel"))}">✕</button>
+      ${b ? `<button type="button" class="bm-del">${esc(t("bm_del"))}</button>` : ""}
+    </form>` : "";
+  return `<div class="row${b ? " bm" : ""}" data-i="${i}">${btn}<small>${fmt(s.start)}${tag}</small>${edit}${lines(s, listMode(), i)}</div>`;
+}
+
+function startBookmarkEdit(i) {
+  bmEditing = i; bmFocus = true;
+  bmDraft = bookmarkMap().get(i)?.name || "";
+  renderList();
+}
+
+function stopBookmarkEdit() {
+  const had = bmEditing >= 0;
+  bmEditing = -1; bmDraft = "";
+  if (had) renderList();
+}
+
+// 儲存：先樂觀更新畫面，再依序送到後端（避免快速連續操作時舊結果蓋掉新結果）；失敗就改回伺服器上的版本
+function setBookmarks(next) {
+  const id = videoId;
+  if (!id) return;
+  const my = ++bmSeq;
+  bookmarks = next; bmEditing = -1; bmDraft = "";
+  renderBookmarks();
+  bmQueue = bmQueue.then(async () => {
+    try {
+      const res = await fetch(`/api/library/${id}/bookmarks`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookmarks: next }),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail);
+      const saved = (await res.json()).bookmarks;
+      if (id === videoId && my === bmSeq && JSON.stringify(saved) !== JSON.stringify(bookmarks)) {
+        bookmarks = saved; renderBookmarks(); // 以後端整理過的結果為準（去重、截斷）
+      }
+    } catch (err) {
+      setStatus(() => serverMsg(err.message), true);
+      if (id === videoId) loadBookmarks(id);
+    }
+  });
+}
+
+function saveBookmark(i, raw) {
+  const name = bmNorm(raw), old = bookmarkMap().get(i);
+  if (!name || !segs[i]) { stopBookmarkEdit(); return; } // 沒有名稱：不加入（已有的維持原樣）
+  const next = bookmarks.filter((x) => x !== old);
+  next.push({ t: segs[i].start, name });
+  setBookmarks(next.sort((a, b) => a.t - b.t));
+}
+
+function deleteBookmark(i) {
+  const old = bookmarkMap().get(i);
+  if (old) setBookmarks(bookmarks.filter((x) => x !== old)); else stopBookmarkEdit();
+}
+
+async function loadBookmarks(id) {
+  try {
+    const res = await fetch(`/api/library/${id}/bookmarks`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (id !== videoId) return; // 已經換到別支影片
+    bookmarks = data.bookmarks || [];
+  } catch (_) { return; }
+  renderBookmarks();
+}
+
+// 書籤有變動：更新工具列的書籤鈕與書籤清單，並重畫字幕清單上的標示
+function renderBookmarks() {
+  $("bm-wrap").hidden = !bookmarks.length;
+  if (!bookmarks.length) setBmOpen(false); else if (!$("bm-panel").hidden) fillBmPanel();
+  if (segs.length) renderList();
+}
+
+function fillBmPanel() {
+  $("bm-panel").innerHTML = bookmarks.map((b, k) =>
+    `<div class="bm-row"><button type="button" class="bm-item" data-k="${k}"><span class="bm-time">${fmt(b.t)}</span><span class="bm-label">${esc(b.name)}</span></button>` +
+    `<button type="button" class="bm-x" data-k="${k}" title="${esc(t("bm_del"))}" aria-label="${esc(t("bm_del"))}">✕</button></div>`
+  ).join("");
+}
+
+function setBmOpen(open) {
+  open = open && bookmarks.length > 0;
+  $("bm-panel").hidden = !open;
+  $("bm-toggle").setAttribute("aria-pressed", String(open));
+  $("bm-toggle").setAttribute("aria-expanded", String(open));
+  if (open) fillBmPanel();
+}
+
+// 跳到書籤對應的字幕：影片跳過去（投影片模式則換到那一張），清單展開並捲到那一行
+function gotoBookmark(b) {
+  if (!segs.length) return;
+  const i = bmSegIndex(b);
+  if (player?.seekTo) {
+    if (slideMode) gotoSlide(i); else player.seekTo(segs[i].start, true);
+    follow = true; // 播放位置就是書籤那一則：清單接著跟隨播放
+  } else follow = false;
+  if (!$("transcript").open) { searchOpening = true; $("transcript").open = true; }
+  const row = document.querySelector(`#list .row[data-i="${i}"]`), box = $("list");
+  if (row) {
+    autoScrollUntil = Date.now() + 1500;
+    box.scrollTo({ top: row.offsetTop - box.clientHeight / 2 + row.offsetHeight / 2, behavior: "smooth" });
+  }
+  syncFollowButton();
+  setBmOpen(false);
+}
+
 function renderList() {
   const box = $("list"), top = box.scrollTop; // 部分字幕持續更新時，保留清單的捲動位置
+  const draft = box.querySelector(".bm-input"); // 正在輸入書籤名稱時清單重畫：保留已輸入的字與焦點
+  const hadFocus = !!draft && document.activeElement === draft;
+  if (draft) bmDraft = draft.value;
   computeHits();
-  box.innerHTML = segs
-    .map((s, i) => `<div class="row" data-i="${i}"><small>${fmt(s.start)}</small>${lines(s, listMode(), i)}</div>`)
-    .join("");
+  const bm = bookmarkMap();
+  box.innerHTML = segs.map((s, i) => rowHtml(s, i, bm.get(i))).join("");
   showSearchCount();
   box.scrollTop = top;
+  if (bmEditing >= 0) {
+    const input = box.querySelector(".bm-input");
+    if (input && (bmFocus || hadFocus)) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    bmFocus = false;
+  }
   const n = segs.filter((s) => s.trans != null).length;
   $("transcript-title").textContent = n < segs.length
     ? t("tx_title_partial", { n, total: segs.length }) : t("tx_title", { total: segs.length });
@@ -154,12 +294,55 @@ function renderList() {
 
 $("list").addEventListener("click", (e) => {
   const row = e.target.closest(".row");
+  if (row && e.target.closest(".bm-btn")) { // 左側的書籤鈕：展開名稱輸入框，不跳播
+    const i = +row.dataset.i;
+    if (bmEditing === i) stopBookmarkEdit(); else startBookmarkEdit(i);
+    return;
+  }
+  if (row && e.target.closest(".bm-edit")) { // 名稱輸入框裡的按鈕（確定由 submit 處理）：不跳播
+    if (e.target.closest(".bm-cancel")) stopBookmarkEdit();
+    else if (e.target.closest(".bm-del")) deleteBookmark(+row.dataset.i);
+    return;
+  }
   if (row && player && slideMode) { gotoSlide(+row.dataset.i); return; } // 投影片模式：跳到那一則，畫面停住
   if (row && player) {
     player.seekTo(segs[+row.dataset.i].start, true);
     follow = true; // 點了某一句：跳過去並恢復跟隨（那一句就在畫面上，不需要捲動）
     syncFollowButton();
   }
+});
+
+$("list").addEventListener("submit", (e) => {
+  const form = e.target.closest(".bm-edit");
+  if (!form) return;
+  e.preventDefault();
+  saveBookmark(+form.closest(".row").dataset.i, form.querySelector(".bm-input").value);
+});
+$("list").addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.isComposing || e.keyCode === 229 || !e.target.closest?.(".bm-edit")) return;
+  e.preventDefault();
+  const i = bmEditing;
+  stopBookmarkEdit();
+  document.querySelector(`#list .row[data-i="${i}"] .bm-btn`)?.focus();
+});
+
+// 工具列的書籤鈕與書籤清單
+$("bm-toggle").addEventListener("click", () => setBmOpen($("bm-panel").hidden));
+$("bm-panel").addEventListener("click", (e) => {
+  const del = e.target.closest(".bm-x");
+  if (del) { // 滑過項目才浮現的刪除鈕：刪掉這個書籤，清單維持展開（最後一個刪掉時書籤鈕會消失）
+    e.stopPropagation(); // 重畫後按到的鈕已不在畫面上，不然下面「按別處就收起」會誤判成按到清單外
+    setBookmarks(bookmarks.filter((_, k) => k !== +del.dataset.k));
+    return;
+  }
+  const item = e.target.closest(".bm-item");
+  if (item && bookmarks[+item.dataset.k]) gotoBookmark(bookmarks[+item.dataset.k]);
+});
+document.addEventListener("click", (e) => { // 按到書籤清單以外的地方就收起來
+  if (!$("bm-panel").hidden && !e.target.closest("#bm-wrap")) setBmOpen(false);
+});
+$("bm-wrap").addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("bm-panel").hidden) { e.preventDefault(); setBmOpen(false); $("bm-toggle").focus(); }
 });
 
 document.querySelectorAll("input[name=mode]").forEach((r) =>
@@ -825,6 +1008,7 @@ function syncTitleFromLibrary() {
 function applySubs(data) {
   setTitle(data.title, data.title_trans || libTrans(videoId));
   segs = data.segments;
+  if (bmFor !== videoId) { bmFor = videoId; bookmarks = []; bmEditing = -1; loadBookmarks(videoId); } // 每支影片只載入一次
   $("bar").hidden = false;
   $("transcript").hidden = false; // 預設維持收合
   $("dl-srt").hidden = $("dl-vtt").hidden = $("export-current").hidden = !data.complete; // 下載、匯出需等翻譯完成
@@ -868,6 +1052,7 @@ async function pollJob(id, my) {
 function resetView() {
   segs = []; videoId = null; current = -1; listCur = -1; follow = true; partialShown = false;
   slideIdx = -1; srch.cur = -1; // 搜尋字串與面板保留，換到下一支影片照樣搜尋
+  bookmarks = []; bmFor = null; bmEditing = -1; bmDraft = ""; bmSeq++; setBmOpen(false); $("bm-wrap").hidden = true;
   if (slideMode) {
     // 換影片（或刪除、重新處理目前這支）：退出投影片模式。投影片模式的播放器沒有控制列、而且靜音，
     // 直接拆掉；接著載入的影片會建立一個正常的播放器（有控制列、有聲音）。

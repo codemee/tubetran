@@ -89,6 +89,33 @@ def put_tags(video_id: str, req: TagsReq):
     return {"tags": tags}
 
 
+class BookmarkReq(BaseModel):
+    t: float = Field(ge=0, le=10_000_000)
+    name: str = Field(max_length=200)
+
+
+class BookmarksReq(BaseModel):
+    bookmarks: list[BookmarkReq] = Field(max_length=500)
+
+
+@app.get("/api/library/{video_id}/bookmarks")
+def get_bookmarks(video_id: str):
+    if not jobs.VIDEO_ID_RE.fullmatch(video_id):
+        raise HTTPException(400, "不合法的影片 ID")
+    return {"bookmarks": jobs.load_bookmarks(video_id)}
+
+
+@app.put("/api/library/{video_id}/bookmarks")
+def put_bookmarks(video_id: str, req: BookmarksReq):
+    try:
+        saved = jobs.save_bookmarks(video_id, [b.model_dump() for b in req.bookmarks])
+    except ValueError:
+        raise HTTPException(400, "不合法的影片 ID")
+    if saved is None:
+        raise HTTPException(404, "找不到這支影片")
+    return {"bookmarks": saved}
+
+
 @app.post("/api/library/{video_id}/check")
 def check_library_item(video_id: str):
     try:

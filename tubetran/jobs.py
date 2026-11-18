@@ -1,5 +1,6 @@
 """背景任務：字幕 → (Whisper) → 翻譯，並以 video_id 快取結果。"""
 import json
+import math
 import re
 import shutil
 import threading
@@ -310,6 +311,55 @@ def save_tags(video_id: str, tags) -> list[str] | None:
     return clean
 
 
+# ── 書籤：存在每支影片自己的 cache/<id>/bookmarks.json，刪除快取時一併清除 ──
+# 每個書籤是 {"t": 那一則字幕的開始秒數, "name": 名稱}，以時間定位（重新處理後句子會變，時間仍可對到最接近的那一句）。
+# 同一個時間點只留一個書籤；依時間排序。
+MAX_BOOKMARKS = 200
+MAX_BOOKMARK_NAME_LEN = 40
+
+
+def bookmarks_path(video_id: str):
+    return config.CACHE_DIR / video_id / "bookmarks.json"
+
+
+def normalize_bookmarks(items) -> list[dict]:
+    """清理書籤：名稱合併空白並截斷、略過沒有名稱或時間不合法的、同一時間只留最後一個、依時間排序、限制數量。"""
+    by_time: dict[float, dict] = {}
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            t = round(float(item.get("t")), 3)
+        except (TypeError, ValueError):
+            continue
+        name = re.sub(r"\s+", " ", str(item.get("name", ""))).strip()[:MAX_BOOKMARK_NAME_LEN].strip()
+        if not name or not math.isfinite(t) or t < 0:
+            continue
+        by_time[t] = {"t": t, "name": name}
+    return [by_time[t] for t in sorted(by_time)][:MAX_BOOKMARKS]
+
+
+def load_bookmarks(video_id: str) -> list[dict]:
+    try:
+        return normalize_bookmarks(json.loads(bookmarks_path(video_id).read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return []
+
+
+def save_bookmarks(video_id: str, items) -> list[dict] | None:
+    """儲存書籤並回傳清理後的結果。和標籤一樣：只有已有快取的影片才能加書籤（找不到時回傳 None）。"""
+    if not VIDEO_ID_RE.fullmatch(video_id):
+        raise ValueError("不合法的影片 ID")
+    if not (result_path(video_id).exists() or subs_path(video_id).exists()):
+        return None
+    clean = normalize_bookmarks(items)
+    try:
+        _write_json(bookmarks_path(video_id), clean)
+    except OSError:  # 與刪除同時發生時，資料夾可能剛好消失
+        return None
+    return clean
+
+
 def list_library() -> list[dict]:
     """列出快取中的影片。
 
@@ -479,7 +529,7 @@ def _cancel_slides(video_id: str) -> None:
 
 
 def reprocess_video(video_id: str) -> Job | str | None:
-    """丟掉翻譯結果，重新取得字幕、重組成整句、重新翻譯。保留播放進度與標籤。
+    """丟掉翻譯結果，重新取得字幕、重組成整句、重新翻譯。保留播放進度、標籤與書籤。
 
     - 字幕來自 YouTube（人工／自動）：刪掉 subs.json 重新抓（免費，而且能拿到逐字時間）。
     - 字幕來自 Whisper：保留辨識結果（重跑很慢），只用原始片段重新分句。
@@ -633,7 +683,7 @@ def slide_image(video_id: str, index: int):
 # 匯出檔是一個 JSON：{"format": "tubetran-export", "version": 1, "videos": [{"video_id": ..., "files": {檔名: 內容}}]}。
 # 只帶這些檔案（都是 JSON）；音檔不帶（可能數十 MB，辨識完就用不到）。translated.json 是必要的。
 EXPORT_FORMAT = "tubetran-export"
-EXPORT_FILES = ("translated.json", "subs.json", "glossary.json", "progress.json", "tags.json")
+EXPORT_FILES = ("translated.json", "subs.json", "glossary.json", "progress.json", "tags.json", "bookmarks.json")
 
 
 def export_bundle(video_ids: list[str] | None = None) -> dict:

@@ -267,6 +267,7 @@ def _make_done_with_subs(tmp_path, vid, via):
     (d / "translated.pre-check.json").write_text("{}", encoding="utf-8")
     (d / "progress.json").write_text(json.dumps({"position": 100, "duration": 600}), encoding="utf-8")
     (d / "tags.json").write_text(json.dumps(["教學"], ensure_ascii=False), encoding="utf-8")
+    (d / "bookmarks.json").write_text(json.dumps([{"t": 1.0, "name": "重點"}], ensure_ascii=False), encoding="utf-8")
     (d / "glossary.json").write_text(json.dumps({"舊": "術語"}, ensure_ascii=False), encoding="utf-8")
     return d
 
@@ -290,6 +291,7 @@ def test_reprocess_refetches_captions_and_keeps_progress_and_tags(client, tmp_pa
     assert not (d / "translated.pre-check.json").exists()
     assert data["glossary"] == {"cgroup": "cgroup"}  # 術語表也重新整理（舊的不沿用）
     assert jobs.load_progress(vid)["position"] == 100 and jobs.load_tags(vid) == ["教學"]
+    assert jobs.load_bookmarks(vid) == [{"t": 1.0, "name": "重點"}]  # 書籤也保留（以時間定位，不受句子重組影響）
 
 
 def test_glossary_is_made_once_saved_and_reused_on_resume(client, tmp_path, monkeypatch):
@@ -370,6 +372,44 @@ def test_tags_save_list_and_cleanup(client, tmp_path):
     assert not (tmp_path / vid).exists()
 
 
+def test_normalize_bookmarks():
+    got = jobs.normalize_bookmarks([
+        {"t": 30, "name": "  後面  的 重點 "}, {"t": 5.0004, "name": "前面"}, {"t": 30, "name": "同一時間只留最後一個"},
+        {"t": 7, "name": "  "}, {"t": -1, "name": "負的"}, {"t": "x", "name": "壞時間"}, {"t": float("inf"), "name": "無限"},
+        {"name": "沒有時間"}, "不是物件", {"t": 9, "name": "x" * 100},
+    ])
+    assert [b["t"] for b in got] == [5.0, 9.0, 30.0]  # 依時間排序；時間取到毫秒
+    assert got[0]["name"] == "前面" and got[1]["name"] == "x" * jobs.MAX_BOOKMARK_NAME_LEN
+    assert got[2]["name"] == "同一時間只留最後一個"
+    assert len(jobs.normalize_bookmarks([{"t": i, "name": "n"} for i in range(500)])) == jobs.MAX_BOOKMARKS
+    assert jobs.normalize_bookmarks("壞") == [] and jobs.normalize_bookmarks(None) == []
+
+
+def test_bookmarks_save_load_and_cleanup(client, tmp_path):
+    vid = "aaaaaaaaaaa"
+    # 沒有快取的影片：404，且不會替它建立資料夾
+    assert client.put(f"/api/library/{vid}/bookmarks", json={"bookmarks": [{"t": 1, "name": "a"}]}).status_code == 404
+    assert not (tmp_path / vid).exists()
+    assert client.put("/api/library/bad!/bookmarks", json={"bookmarks": []}).status_code in (400, 404)
+    assert client.get("/api/library/bad!/bookmarks").status_code in (400, 404)
+
+    _make(tmp_path, vid, "x", 1000)
+    assert client.get(f"/api/library/{vid}/bookmarks").json() == {"bookmarks": []}
+    res = client.put(f"/api/library/{vid}/bookmarks", json={"bookmarks": [{"t": 20, "name": " 第二點 "}, {"t": 3.5, "name": "第一點"}]})
+    assert res.json() == {"bookmarks": [{"t": 3.5, "name": "第一點"}, {"t": 20.0, "name": "第二點"}]}
+    assert client.get(f"/api/library/{vid}/bookmarks").json() == res.json()
+    # 欄位不合法：422
+    assert client.put(f"/api/library/{vid}/bookmarks", json={"bookmarks": [{"t": -1, "name": "a"}]}).status_code == 422
+    # 損壞的檔案視為沒有書籤
+    (tmp_path / vid / "bookmarks.json").write_text("{not json", encoding="utf-8")
+    assert client.get(f"/api/library/{vid}/bookmarks").json() == {"bookmarks": []}
+    # 清空；刪除影片時書籤一起清除
+    assert client.put(f"/api/library/{vid}/bookmarks", json={"bookmarks": []}).json() == {"bookmarks": []}
+    client.put(f"/api/library/{vid}/bookmarks", json={"bookmarks": [{"t": 1, "name": "a"}]})
+    assert client.delete(f"/api/library/{vid}").status_code == 200
+    assert not (tmp_path / vid).exists()
+
+
 def test_tags_file_corrupt_is_ignored(client, tmp_path):
     vid = "aaaaaaaaaaa"
     _make(tmp_path, vid, "x", 1000)
@@ -389,7 +429,7 @@ def test_export_then_import_on_another_computer(client, tmp_path, monkeypatch):
     bundle = r.json()
     assert bundle["format"] == "tubetran-export" and [v["video_id"] for v in bundle["videos"]] == [vid]
     files = bundle["videos"][0]["files"]
-    assert set(files) == {"translated.json", "subs.json", "glossary.json", "progress.json", "tags.json"}  # 不含音檔
+    assert set(files) == {"translated.json", "subs.json", "glossary.json", "progress.json", "tags.json", "bookmarks.json"}  # 不含音檔
     assert len(client.get("/api/export").json()["videos"]) == 2  # 不指定：全部已完成的
     assert client.get("/api/export?ids=ccccccccccc").status_code == 404
 
@@ -402,6 +442,7 @@ def test_export_then_import_on_another_computer(client, tmp_path, monkeypatch):
     lib = client.get("/api/library").json()
     assert [v["video_id"] for v in lib] == [vid] and lib[0]["status"] == "done"
     assert lib[0]["tags"] == ["教學"] and lib[0]["position"] == 100  # 標籤與播放位置一起帶過來
+    assert client.get(f"/api/library/{vid}/bookmarks").json() == {"bookmarks": [{"t": 1.0, "name": "重點"}]}  # 書籤也是
     assert not list((other / vid).glob("audio.*"))
     # 再匯入一次：已經有了，略過、不覆蓋
     (other / vid / "translated.json").write_text(json.dumps({"title": "本機改過", "segments": []}), encoding="utf-8")
