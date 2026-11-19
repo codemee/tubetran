@@ -39,7 +39,7 @@ def test_fullscreen_button_matches_youtubes_transparent_white_line_style():
 
 def test_subtitles_sit_low():
     rule = _rule(_css(), "#overlay")
-    assert re.search(r"bottom:\s*max\(30px,\s*5%\)", rule)        # 視窗化至少 30px，全螢幕約 5%
+    assert re.search(r"bottom:\s*var\(--sub-bottom,\s*max\(30px,\s*5%\)\)", rule)  # 預設：視窗化至少 30px，全螢幕約 5%；調整後用 --sub-bottom
 
 
 def test_transcript_follows_playback_and_can_return_to_current_line():

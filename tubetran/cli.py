@@ -358,6 +358,23 @@ class _DesktopApi:
         except OSError:
             return False
 
+    def subtitle_key(self):
+        """Alt+↑ / Alt+↓ 現在是不是被按住：1＝Alt+↑、-1＝Alt+↓、0＝都沒有（或同時按著兩個方向）。用來調整字幕的高低位置。
+        用 Alt 組合鍵是為了不和 YouTube 的音量快捷鍵（單純的 ↑ ↓）衝突。
+        理由與限制同 fullscreen_key_down：焦點在 YouTube 的 iframe 裡時網頁收不到按鍵，所以桌面版改由這裡讀按鍵狀態；
+        只回報這兩個組合、只回傳方向；只有我們的視窗在最前面、按著 Alt、且沒有同時按著 Ctrl／Shift／Win 時才可能不是 0。"""
+        if sys.platform != "win32" or self._window is None:
+            return 0
+        try:
+            hwnd = self._hwnd()
+            if not hwnd or winctl.foreground_window() != hwnd:
+                return 0
+            if not winctl.key_down(0x12) or any(winctl.key_down(vk) for vk in (0x10, 0x11, 0x5B, 0x5C)):  # 要按著 Alt；Shift、Ctrl、左右 Win 不行
+                return 0
+            return int(winctl.key_down(0x26)) - int(winctl.key_down(0x28))          # ↑ 是 1、↓ 是 -1、同時按是 0
+        except OSError:
+            return 0
+
     def logo_fraction(self, left, top, width, height, dpr=1.0):
         """視窗內一小塊區域（客戶區的 CSS 像素）裡「白色像素」的比例；網頁用它判斷 YouTube 控制列右下角的
         「YouTube」字樣在不在（那個字樣永遠是白色，且和控制列一起出現／消失）。網頁讀不到跨網域 iframe 的像素，

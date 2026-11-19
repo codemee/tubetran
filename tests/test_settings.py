@@ -167,7 +167,7 @@ def test_index_references_versioned_asset_urls(client, tmp_path, monkeypatch):
 
     first, html = urls()
     names = {u.split("?v=")[0] for u in first}
-    assert names == {"/static/style.css", "/static/i18n.js", "/static/fsbutton.js", "/static/linebreak.js", "/static/search.js", "/static/app.js",
+    assert names == {"/static/style.css", "/static/i18n.js", "/static/fsbutton.js", "/static/linebreak.js", "/static/search.js", "/static/subpos.js", "/static/app.js",
                      "/static/settings.js", "/static/desktop.js"}
     assert 'href="/static/logo/tubetran-light-icon.svg"' in html  # 圖片不需要
     assert len({u.split("?v=")[1] for u in first}) == 1            # 同一版本的檔案共用同一個版本字串

@@ -247,8 +247,9 @@ body {
 #stage.no-video #fs, #stage.no-video #player { visibility: hidden; }
 /* 字幕疊在影片上；不攔截點擊，避免擋住播放器操作 */
 #overlay {
-  /* 底邊離畫面底部：視窗化至少 30px，全螢幕約 5%（1080p 約 54px） */
-  position: absolute; left: 4%; right: 4%; bottom: max(30px, 5%); z-index: 1;
+  /* 底邊離畫面底部：預設視窗化至少 30px，全螢幕約 5%（1080p 約 54px）；
+     播放時按 ↑ ↓ 調整後，app.js 會設定 --sub-bottom（視窗與全螢幕各記一個位置，見 subpos.js） */
+  position: absolute; left: 4%; right: 4%; bottom: var(--sub-bottom, max(30px, 5%)); z-index: 1;
   text-align: center; pointer-events: none;
   font-size: clamp(14px, 2.6cqw, 44px); line-height: 1.4; color: #fff;
   text-shadow: 0 1px 2px #000;

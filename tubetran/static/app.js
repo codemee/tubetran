@@ -613,6 +613,33 @@ document.addEventListener("fullscreenchange", () => {
 document.addEventListener("keydown", (e) => {
   if (fsHotkey(e, document.activeElement?.tagName)) toggleFullscreen();
 });
+
+// ── 字幕高低位置：播放時按 Alt+↑ / Alt+↓ 調整，記在這台電腦上 ──
+// 字幕可能擋住 YouTube 的進度條；進度條在視窗與全螢幕的高度不一樣，所以兩種畫面各記一個位置（subpos.js）。
+// 沒調整過就用 CSS 預設位置。位置是「字幕底邊離播放區底部幾像素」，用 CSS 變數 --sub-bottom 套用。
+const SUBPOS_KEY = "tubetran.subPos";
+let subPos = { win: null, fs: null };
+try { subPos = SubPos.parseStored(localStorage.getItem(SUBPOS_KEY)); } catch (_) {}
+const subMode = () => (document.fullscreenElement || pseudoFs ? "fs" : "win");
+function applySubPos() {
+  const v = subPos[subMode()];
+  if (v == null) $("stage").style.removeProperty("--sub-bottom"); else $("stage").style.setProperty("--sub-bottom", `${v}px`);
+}
+function moveSub(dir) {
+  const ov = $("overlay"), key = subMode();
+  const cur = subPos[key] ?? (parseFloat(getComputedStyle(ov).bottom) || 0); // 還沒調整過：從目前（預設）的位置開始
+  subPos[key] = SubPos.moveBottom(cur, dir, $("stage").clientHeight);
+  applySubPos();
+  try { localStorage.setItem(SUBPOS_KEY, JSON.stringify(subPos)); } catch (_) {}
+}
+applySubPos();
+document.addEventListener("fullscreenchange", applySubPos); // 進出全螢幕：換成另一個畫面記的位置
+document.addEventListener("keydown", (e) => {
+  const dir = SubPos.subKey(e, document.activeElement);
+  if (!dir || !segs.length) return; // 還沒有字幕：不攔截，照常捲動頁面
+  e.preventDefault();               // 不要讓瀏覽器再做它自己的事
+  moveSub(dir);
+});
 // 桌面版：點過影片後鍵盤焦點在 YouTube 的 iframe 裡，網頁收不到按鍵（跨網域 iframe 的限制），上面的 keydown 不會觸發。
 // 這時改由 Python 讀 F 鍵的狀態（只在我們的視窗在最前面時才會回報按下）。瀏覽器做不到，點過影片後要先點一下影片外面。
 {
@@ -625,6 +652,21 @@ document.addEventListener("keydown", (e) => {
       if (down && !prev) toggleFullscreen();                        // 只在「剛按下」的那一刻切換，按住不放不會一直切換
       prev = down;
     } catch (_) { prev = false; } finally { busy = false; }
+  }, 60);
+}
+// 桌面版：焦點在 YouTube 的 iframe 時，Alt+↑ / Alt+↓ 同樣由 Python 回報（理由同上，只回報這兩個組合）。
+// 用 Alt 組合鍵是為了不和 YouTube 的音量快捷鍵（單純的 ↑ ↓）衝突。
+{
+  const rep = { dir: 0, since: 0, last: 0 };
+  let busy = false;
+  setInterval(async () => {
+    if (busy || document.activeElement?.tagName !== "IFRAME" || typeof window.pywebview?.api?.subtitle_key !== "function") { rep.dir = 0; return; }
+    busy = true;
+    try {
+      const dir = segs.length ? await window.pywebview.api.subtitle_key() : 0;
+      if (dir && SubPos.repeatStep(rep, dir, performance.now())) moveSub(dir);
+      if (!dir) rep.dir = 0;
+    } catch (_) { rep.dir = 0; } finally { busy = false; }
   }, 60);
 }
 // ── 全螢幕鈕的顯示／隱藏（邏輯在 fsbutton.js）──
