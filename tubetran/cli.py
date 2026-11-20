@@ -358,6 +358,29 @@ class _DesktopApi:
         except OSError:
             return False
 
+    def _alt_key_down(self, vk):
+        """Alt+指定字母鍵現在是不是被按住。理由與限制同 fullscreen_key_down：只回報這個組合、只回傳是／否，
+        只有我們的視窗在最前面、按著 Alt、且沒有同時按著 Ctrl／Shift／Win 時才可能是 True。"""
+        if sys.platform != "win32" or self._window is None:
+            return False
+        try:
+            hwnd = self._hwnd()
+            if not hwnd or winctl.foreground_window() != hwnd:
+                return False
+            if not winctl.key_down(0x12) or any(winctl.key_down(k) for k in (0x10, 0x11, 0x5B, 0x5C)):  # 要按著 Alt；Shift、Ctrl、Win 不行
+                return False
+            return winctl.key_down(vk)
+        except OSError:
+            return False
+
+    def caption_key_down(self):
+        """Alt+C（切換字幕模式）。用 Alt 組合鍵是為了不和 YouTube 自己的 C（開關字幕）衝突。"""
+        return self._alt_key_down(0x43)
+
+    def bookmark_key_down(self):
+        """Alt+B（全螢幕帶出書籤清單）。"""
+        return self._alt_key_down(0x42)
+
     def subtitle_key(self):
         """Alt+↑ / Alt+↓ 現在是不是被按住：1＝Alt+↑、-1＝Alt+↓、0＝都沒有（或同時按著兩個方向）。用來調整字幕的高低位置。
         用 Alt 組合鍵是為了不和 YouTube 的音量快捷鍵（單純的 ↑ ↓）衝突。

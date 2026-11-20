@@ -41,9 +41,51 @@
     return !/^(INPUT|TEXTAREA|SELECT)$/.test(activeTag || "");
   }
 
+  // 字幕模式快捷鍵 Alt+C：用 Alt 組合鍵是為了不和 YouTube 自己的 C（開關字幕）衝突，YouTube 的快捷鍵都不處理 Alt 組合。
+  // 一定要按著 Alt，且不能同時按 Ctrl／Meta／Shift（AltGr 會被系統當成 Ctrl+Alt，一併排除）；按住不放、輸入法選字中不算。
+  // macOS 的 Option+C 會產生 "ç"，所以也認實體按鍵 code。Alt+C 在輸入框裡沒有別的用途，打字時也能用。
+  function altHotkey(e, letter) {
+    if (!e || !(String(e.key).toLowerCase() === letter || e.code === "Key" + letter.toUpperCase())) return false;
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.repeat || e.isComposing) return false;
+    return true;
+  }
+  const captionHotkey = (e) => altHotkey(e, "c");
+  // 書籤清單快捷鍵 Alt+B（同樣的條件；YouTube 沒有 Alt 組合的快捷鍵）
+  const bookmarkHotkey = (e) => altHotkey(e, "b");
+
+  // 字幕模式的循環順序：雙語 → 原文 → 譯文 → 無字幕 → 雙語
+  const CAPTION_MODES = ["both", "orig", "trans", "none"];
+  const nextCaptionMode = (m) => CAPTION_MODES[(CAPTION_MODES.indexOf(m) + 1) % CAPTION_MODES.length];
+  // 讀取記下來的模式；沒有或不認得就用雙語
+  const parseCaptionMode = (raw) => (CAPTION_MODES.includes(raw) ? raw : "both");
+
+  // 全螢幕時由我們自己處理的 YouTube 播放器快捷鍵（Space／K 播放暫停、← → 5 秒、J L 10 秒、M 靜音、↑ ↓ 音量）。
+  // 原因：YouTube 的快捷鍵要焦點在播放器「內部」的元素上才有用，用程式把焦點交給 iframe 沒有用（只有使用者真的點過影片才有），
+  // 所以全螢幕時焦點留在我們的頁面上，由我們用播放器 API 做同樣的事；使用者點過影片後焦點在 iframe 裡，則由 YouTube 原生處理。
+  // 傳回要做的事，不是快捷鍵就傳回 null。Alt／Ctrl／Meta 組合是別的快捷鍵（Alt+C、Alt+B、Ctrl+F…）；按住不放時只有連續動作會重複。
+  function playerKeyAction(e) {
+    if (!e || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return null;
+    switch (e.key) {
+      case " ": case "k": case "K": return e.repeat ? null : { toggle: true };
+      case "m": case "M": return e.repeat ? null : { mute: true };
+      case "ArrowLeft": return { seek: -5 };
+      case "ArrowRight": return { seek: 5 };
+      case "j": case "J": return { seek: -10 };
+      case "l": case "L": return { seek: 10 };
+      case "ArrowUp": return { volume: 5 };
+      case "ArrowDown": return { volume: -5 };
+      default: return null;
+    }
+  }
+
+  root.playerKeyAction = playerKeyAction;
   root.fsShouldShow = fsShouldShow;
   root.fsHotkey = fsHotkey;
   root.fsLogoReading = fsLogoReading;
+  root.captionHotkey = captionHotkey;
+  root.bookmarkHotkey = bookmarkHotkey;
+  root.nextCaptionMode = nextCaptionMode;
+  root.parseCaptionMode = parseCaptionMode;
   root.FS_HIDE_MS = HIDE_MS;
-  if (typeof module !== "undefined" && module.exports) module.exports = { fsShouldShow, fsLogoReading, fsHotkey, HIDE_MS, LOGO_MIN, LOGO_MAX };
+  if (typeof module !== "undefined" && module.exports) module.exports = { fsShouldShow, fsLogoReading, fsHotkey, captionHotkey, bookmarkHotkey, playerKeyAction, nextCaptionMode, parseCaptionMode, CAPTION_MODES, HIDE_MS, LOGO_MIN, LOGO_MAX };
 })(typeof window !== "undefined" ? window : globalThis);

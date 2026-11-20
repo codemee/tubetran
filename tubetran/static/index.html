@@ -143,6 +143,16 @@
         <div id="slide-count"></div>
         <div id="slide-prep" hidden></div>
         <div id="busy" hidden><span class="spin" aria-hidden="true"></span><span id="busy-text"></span></div>
+        <!-- 全螢幕時最上排的工具列（YouTube 音量圖示左邊）：書籤鈕（快捷鍵 Alt+B，這支影片有書籤才出現；點開在播放區裡列出書籤，
+             選一個跳到對應的字幕）、字幕模式鈕（快捷鍵 Alt+C，點一下依序切換 雙語 → 原文 → 譯文 → 無）；只在全螢幕出現 -->
+        <div id="fs-tools">
+          <button id="sbm" type="button" hidden aria-expanded="false" aria-controls="fs-bm" title="書籤 (Alt+B)" aria-label="書籤" data-i18n-attr="title:sbm_hint;aria-label:bm">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/></svg>
+          </button>
+          <button id="sm" type="button">雙語</button>
+        </div>
+        <div id="sm-flash" aria-live="polite"></div>
+        <div id="fs-bm" hidden></div>
         <button id="fs" type="button" title="全螢幕 (F)" aria-label="全螢幕" data-i18n-attr="title:fs;aria-label:fs">
           <!-- 全螢幕：四個角的線條圖示（單色，和 YouTube 播放器的按鈕風格一致） -->
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>

@@ -279,6 +279,54 @@ body {
 }
 #fs:hover { background: rgba(255, 255, 255, .18); }
 #stage:fullscreen:not(.active), #stage.pseudo-fs:not(.active) { cursor: none; }
+/* 全螢幕的工具列：只在全螢幕出現，放在最上排、YouTube 音量圖示的左邊，和全螢幕鈕同步顯示／隱藏。
+   由左到右是：書籤鈕（這支影片有書籤才有）、字幕模式鈕、YouTube 的音量／CC／設定。用 flex 排，沒有書籤時書籤鈕不占位置，
+   字幕模式鈕永遠緊鄰音量。YouTube 的上排圖示垂直中心離上緣約 24px、音量圖示約 28px 寬、左緣離右邊約 155px（1920 寬全螢幕實測），
+   我們的鈕與它的間隔照同樣的 20px（right 175px），鈕之間也是 20px。
+   不放右下角：那裡 YouTube 暫停或播完時會出現「更多影片」的推薦縮圖，會疊在一起 */
+#fs-tools { display: none; position: absolute; top: 10px; right: 175px; z-index: 2; align-items: center; gap: 20px; pointer-events: none; }
+#stage:fullscreen #fs-tools, #stage.pseudo-fs #fs-tools { display: flex; }
+#sm {
+  display: block;
+  height: 28px; min-width: 44px; padding: 0 10px; border: 0; border-radius: 7px;
+  background: transparent; color: #fff; font-family: inherit; font-size: 14px; font-weight: 600; line-height: 28px;
+  cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .25s, background .15s;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .65);
+}
+#stage.active #sm, #sm:focus-visible { opacity: 1; pointer-events: auto; }
+#sm:hover { background: rgba(255, 255, 255, .18); }
+/* 全螢幕的書籤鈕與清單：書籤鈕在字幕模式鈕左邊，清單在這一排的下方；清單開著時不隱藏滑鼠游標 */
+#sbm {
+  display: grid;
+  place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px;
+  background: transparent; color: #fff; cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .25s, background .15s;
+}
+#sbm[hidden] { display: none; }
+#stage.active #sbm, #sbm:focus-visible, #stage.bm-open #sbm { opacity: 1; pointer-events: auto; }
+#sbm:hover, #stage.bm-open #sbm { background: rgba(255, 255, 255, .18); }
+#sbm svg {
+  width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .65));
+}
+#fs-bm {
+  position: absolute; top: 48px; right: 24px; z-index: 4; width: min(340px, 40%); max-height: 60%; overflow-y: auto;
+  padding: 6px; border-radius: 10px; background: rgba(0, 0, 0, .82); color: #fff; box-shadow: 0 6px 24px rgba(0, 0, 0, .5);
+}
+#fs-bm[hidden] { display: none; }
+.fbm-item {
+  display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 7px;
+  background: transparent; color: inherit; font: inherit; font-size: 15px; text-align: left; cursor: pointer;
+}
+.fbm-item:hover, .fbm-item:focus-visible { background: rgba(255, 255, 255, .2); outline: none; }
+.fbm-item .bm-time { color: #cbd5e1; }
+#stage:fullscreen.bm-open, #stage.pseudo-fs.bm-open { cursor: auto; }
+/* 切換時短暫顯示目前模式 */
+#sm-flash {
+  position: absolute; top: 5%; left: 50%; transform: translateX(-50%); z-index: 3; padding: .3em .8em; border-radius: .4em;
+  background: rgba(0, 0, 0, .75); color: #fff; font-size: clamp(14px, 2cqw, 28px);
+  opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+#sm-flash.on { opacity: 1; }
 
 /* ── 投影片模式：沒有 YouTube 控制介面，左右箭頭跳到上一則／下一則字幕，畫面停在那一格 ── */
 #slide-shield, .slide-nav, #slide-count { display: none; }

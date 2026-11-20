@@ -164,4 +164,5 @@ def test_page_wires_subtitle_position_per_screen_mode_and_persists_it():
     assert "if (!dir || !segs.length) return" in js and "e.preventDefault()" in js  # 還沒有字幕時不攔截
     # 桌面版焦點在影片裡：輪詢 Alt+↑ / Alt+↓。用 Alt 組合鍵就不會和 YouTube 的音量快捷鍵衝突，不需要還原音量
     assert "subtitle_key" in js and 'tagName !== "IFRAME"' in js
-    assert "setVolume" not in js
+    # 調字幕位置不能動到音量；setVolume 只有全螢幕的播放器快捷鍵（↑ ↓ 調音量，doPlayerKey）會用到
+    assert js.count("setVolume") == 1 and js.index("setVolume") > js.index("function doPlayerKey")

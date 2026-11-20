@@ -101,6 +101,7 @@ function paintCtrls() {
 function onLangChange() {
   applyStaticI18n();
   paintCtrls();
+  paintMode();
   renderStatus();
   if (segs.length) renderList();
   libKey = ""; // 強制重畫影片庫，讓文字換成新語系
@@ -227,8 +228,11 @@ async function loadBookmarks(id) {
 
 // 書籤有變動：更新工具列的書籤鈕與書籤清單，並重畫字幕清單上的標示
 function renderBookmarks() {
-  $("bm-wrap").hidden = !bookmarks.length;
-  if (!bookmarks.length) setBmOpen(false); else if (!$("bm-panel").hidden) fillBmPanel();
+  $("bm-wrap").hidden = $("sbm").hidden = !bookmarks.length;
+  if (!bookmarks.length) { setBmOpen(false); setFsBm(false); } else {
+    if (!$("bm-panel").hidden) fillBmPanel();
+    if (!$("fs-bm").hidden) fillFsBm();
+  }
   if (segs.length) renderList();
 }
 
@@ -238,6 +242,59 @@ function fillBmPanel() {
     `<button type="button" class="bm-x" data-k="${k}" title="${esc(t("bm_del"))}" aria-label="${esc(t("bm_del"))}">✕</button></div>`
   ).join("");
 }
+
+// ── 全螢幕的書籤清單（Alt+B 或最上排的書籤鈕）──
+// 全螢幕時工具列看不到，所以在播放區裡另放一份清單，只能選取跳轉（刪除要回到視窗模式，避免誤刪）。
+// 開啟時鍵盤焦點交給清單：↑ ↓ 選、Enter 跳轉；焦點離開 YouTube 的 iframe，所以 ↑ ↓ 不會動到 YouTube 的音量。
+// 關閉：再按 Alt+B、再點書籤鈕、或選一個書籤跳轉。關閉時焦點還給播放器。視窗模式按 Alt+B 則是開關工具列的書籤清單。
+// 故意不處理 Esc：Esc 是瀏覽器層直接「退出全螢幕」，網頁擋不住（試過 Keyboard Lock、退出後再接回備援全螢幕，
+// 在桌面版的 WebView2 都會把全螢幕弄亂），所以 Esc 維持原本的行為：退出全螢幕（清單跟著收起）。
+const inFullscreen = () => !!(document.fullscreenElement || pseudoFs);
+function fillFsBm() {
+  $("fs-bm").innerHTML = bookmarks.map((b, k) =>
+    `<button type="button" class="fbm-item" data-k="${k}"><span class="bm-time">${fmt(b.t)}</span><span class="bm-label">${esc(b.name)}</span></button>`
+  ).join("");
+}
+function focusPlayerFrame() {
+  if (inFullscreen()) { document.activeElement?.blur?.(); return; } // 全螢幕：焦點留在頁面上，由 playerKeyAction 處理播放器快捷鍵
+  const frame = !slideMode && player?.getIframe?.();
+  if (frame) { frame.focus(); try { frame.contentWindow.focus(); } catch (_) {} } else document.activeElement?.blur?.();
+}
+function setFsBm(open) {
+  const panel = $("fs-bm");
+  open = open && bookmarks.length > 0;
+  const hadFocus = panel.contains(document.activeElement) || document.activeElement === $("sbm");
+  panel.hidden = !open;
+  $("stage").classList.toggle("bm-open", open);
+  $("sbm").setAttribute("aria-expanded", String(open));
+  if (open) {
+    fillFsBm();
+    const pos = player?.getCurrentTime?.() ?? 0;                       // 從「目前播放位置之前最近的書籤」開始選
+    let k = 0;
+    bookmarks.forEach((b, j) => { if (b.t <= pos) k = j; });
+    const el = panel.children[k];
+    el?.focus(); el?.scrollIntoView?.({ block: "nearest" });
+  } else if (hadFocus) focusPlayerFrame();
+}
+function toggleBookmarkMenu() {
+  if (!bookmarks.length) return;
+  if (inFullscreen()) setFsBm($("fs-bm").hidden);
+  else setBmOpen($("bm-panel").hidden);
+}
+$("sbm").addEventListener("click", () => setFsBm($("fs-bm").hidden));
+$("fs-bm").addEventListener("click", (e) => {
+  const item = e.target.closest(".fbm-item");
+  if (item && bookmarks[+item.dataset.k]) gotoBookmark(bookmarks[+item.dataset.k]);
+});
+$("fs-bm").addEventListener("keydown", (e) => {
+  const items = [...$("fs-bm").querySelectorAll(".fbm-item")], i = items.indexOf(document.activeElement);
+  if (e.altKey || e.ctrlKey || e.metaKey || !items.length) return;
+  const to = { ArrowDown: (i + 1) % items.length, ArrowUp: (i - 1 + items.length) % items.length, Home: 0, End: items.length - 1 }[e.key];
+  if (to == null) return;
+  e.preventDefault();
+  items[to].focus();
+});
+document.addEventListener("fullscreenchange", () => setFsBm(false)); // 進出全螢幕：收起清單（避免留在視窗模式的畫面上）
 
 function setBmOpen(open) {
   open = open && bookmarks.length > 0;
@@ -263,6 +320,7 @@ function gotoBookmark(b) {
   }
   syncFollowButton();
   setBmOpen(false);
+  setFsBm(false);
 }
 
 function renderList() {
@@ -346,9 +404,40 @@ $("bm-wrap").addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("bm-panel").hidden) { e.preventDefault(); setBmOpen(false); $("bm-toggle").focus(); }
 });
 
+// 字幕模式記在這台電腦上（下次開啟沿用）；工具列的選項、全螢幕的浮動按鈕、快捷鍵 C 都走 setMode
+const MODE_KEY = "tubetran.subMode";
+function paintMode() {
+  document.querySelectorAll("input[name=mode]").forEach((r) => { r.checked = r.value === mode; });
+  const sm = $("sm");
+  if (sm) {
+    const label = t("mode_" + mode);
+    sm.textContent = label;
+    sm.title = sm.ariaLabel = t("sm_tip", { mode: label });
+  }
+}
+function setMode(m) {
+  mode = m;
+  paintMode();
+  renderList();
+  showOverlay();
+  try { localStorage.setItem(MODE_KEY, mode); } catch (_) {}
+}
+try { mode = parseCaptionMode(localStorage.getItem(MODE_KEY)); } catch (_) {}
 document.querySelectorAll("input[name=mode]").forEach((r) =>
-  r.addEventListener("change", () => { mode = r.value; renderList(); })
+  r.addEventListener("change", () => setMode(r.value))
 );
+paintMode();
+function cycleMode() { if (segs.length) { setMode(nextCaptionMode(mode)); flashMode(); } }
+// 切換時在畫面上短暫顯示目前模式（「無」尤其需要，否則會以為字幕壞了）
+let flashTimer = 0;
+function flashMode() {
+  const f = $("sm-flash");
+  f.textContent = t("sm_flash", { mode: t("mode_" + mode) });
+  f.classList.add("on");
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => f.classList.remove("on"), 1200);
+}
+$("sm").addEventListener("click", () => { cycleMode(); setTimeout(focusPlayer, 0); });
 
 // ── 字幕清單跟著播放位置：標示正在播放的那一句，並捲到它 ──
 // listCur：清單上標示的那一句＝「最近開始的一句」（兩句之間的空檔也維持標示，不會時有時無）。
@@ -594,25 +683,48 @@ function toggleFullscreen() {
     if (r?.catch) r.catch(() => { if (canPseudo) setPseudoFs(true); });
   } else if (canPseudo) setPseudoFs(true);
 }
-// 按了全螢幕鈕後焦點會留在鈕上，← → 等 YouTube 的快速鍵就沒有作用：把焦點交還給播放器。
-// 投影片模式不交給播放器（← → 是我們自己的上一則／下一則），只讓鈕失去焦點。
+// 按了全螢幕鈕後焦點會留在鈕上，Space 會變成「再按一次那顆鈕」、← → 也沒有作用，要處理焦點。
+// 視窗模式：把焦點交還給播放器（YouTube 的快捷鍵有效）。投影片模式不交給播放器（← → 是我們自己的上一則／下一則），只讓鈕失去焦點。
+// 全螢幕：焦點留在頁面上（不是 iframe），由下面的 playerKeyAction 處理播放器快捷鍵（原因見 fsbutton.js）。
 function focusPlayer() {
-  const btn = $("fs");
-  if (document.activeElement !== btn) return; // 使用者已經點了別的地方，不要搶焦點
-  const frame = !slideMode && player?.getIframe?.();
+  const btn = [$("fs"), $("sm"), $("sbm")].find((b) => b === document.activeElement);
+  if (!btn) return; // 使用者已經點了別的地方，不要搶焦點
+  const frame = !slideMode && !inFullscreen() && player?.getIframe?.();
   if (!frame) { btn.blur(); return; }
   frame.focus();
   try { frame.contentWindow.focus(); } catch (_) {}
 }
 $("fs").addEventListener("click", () => { toggleFullscreen(); setTimeout(focusPlayer, 0); });
-document.addEventListener("fullscreenchange", () => setTimeout(focusPlayer, 0)); // 進出全螢幕會重新排版，完成後再交一次
+// 進出全螢幕會重新排版，完成後再處理焦點。進入全螢幕時，焦點若在頁面上的某個按鈕或輸入框（用 F 鍵進入時可能是這樣），
+// 全螢幕裡看不到它們，Space 不能留在上面；放掉，讓焦點回到頁面本身。焦點已經在 iframe（使用者點過影片）就不動。
+document.addEventListener("fullscreenchange", () => {
+  if (!inFullscreen()) { setTimeout(focusPlayer, 0); return; }
+  setTimeout(() => {
+    const a = document.activeElement;
+    if (a && a !== document.body && a.tagName !== "IFRAME" && $("fs-bm").hidden) a.blur();
+  }, 0);
+});
 // 桌面版（pywebview）：網頁全螢幕只會填滿視窗內容，要同步讓整個視窗全螢幕。瀏覽器裡沒有這個橋接，什麼都不會做
 document.addEventListener("fullscreenchange", () => {
   if (!pseudoFs) { try { window.pywebview?.api?.set_fullscreen(!!document.fullscreenElement); } catch (_) {} }
 });
 document.addEventListener("keydown", (e) => {
   if (fsHotkey(e, document.activeElement?.tagName)) toggleFullscreen();
+  if (captionHotkey(e) && segs.length) { e.preventDefault(); cycleMode(); } // Alt+C：雙語 → 原文 → 譯文 → 無
+  if (bookmarkHotkey(e) && bookmarks.length) { e.preventDefault(); toggleBookmarkMenu(); } // Alt+B：書籤清單
+  // 全螢幕、焦點在頁面本身（不是按鈕、清單、輸入框，也不是 iframe）：自己處理 YouTube 的播放器快捷鍵
+  const a = document.activeElement;
+  if (inFullscreen() && !slideMode && (!a || a === document.body) && player?.getPlayerState) {
+    const act = playerKeyAction(e);
+    if (act) { e.preventDefault(); doPlayerKey(act); }
+  }
 });
+function doPlayerKey(act) {
+  if (act.toggle) { if (player.getPlayerState() === 1) player.pauseVideo(); else player.playVideo(); }
+  else if (act.mute) { if (player.isMuted()) player.unMute(); else player.mute(); }
+  else if (act.seek) player.seekTo(Math.max(0, player.getCurrentTime() + act.seek), true);
+  else if (act.volume) player.setVolume(Math.min(100, Math.max(0, player.getVolume() + act.volume)));
+}
 
 // ── 字幕高低位置：播放時按 Alt+↑ / Alt+↓ 調整，記在這台電腦上 ──
 // 字幕可能擋住 YouTube 的進度條；進度條在視窗與全螢幕的高度不一樣，所以兩種畫面各記一個位置（subpos.js）。
@@ -654,6 +766,24 @@ document.addEventListener("keydown", (e) => {
     } catch (_) { prev = false; } finally { busy = false; }
   }, 60);
 }
+// 桌面版：焦點在 YouTube 的 iframe 時，Alt+C（切換字幕模式）、Alt+B（書籤清單）同樣由 Python 回報，做法同上
+// 焦點剛進入 iframe 的第一次讀取只記錄、不觸發：例如在書籤清單按 Alt+B 關閉時，焦點立刻還給播放器，
+// 這時 Alt+B 還按著，不能把它當成新的一次按下（否則清單會被馬上重新打開）。
+function pollIframeKey(apiName, onPress) {
+  let prev = false, busy = false, seen = false;
+  setInterval(async () => {
+    if (document.activeElement?.tagName !== "IFRAME" || typeof window.pywebview?.api?.[apiName] !== "function") { prev = false; seen = false; return; }
+    if (busy) return;
+    busy = true;
+    try {
+      const down = await window.pywebview.api[apiName]();
+      if (down && !prev && seen) onPress();
+      prev = down; seen = true;
+    } catch (_) { prev = false; seen = false; } finally { busy = false; }
+  }, 60);
+}
+pollIframeKey("caption_key_down", cycleMode);
+pollIframeKey("bookmark_key_down", () => toggleBookmarkMenu());
 // 桌面版：焦點在 YouTube 的 iframe 時，Alt+↑ / Alt+↓ 同樣由 Python 回報（理由同上，只回報這兩個組合）。
 // 用 Alt 組合鍵是為了不和 YouTube 的音量快捷鍵（單純的 ↑ ↓）衝突。
 {
@@ -725,7 +855,7 @@ document.addEventListener("keydown", (e) => {
     if (inside && !st.inside) st.lastActivity = now;
     if (!inside && st.inside) st.leftAt = now;
     st.inside = inside;
-    st.overButton = fsBtn.matches(":hover");
+    st.overButton = fsBtn.matches(":hover") || $("sm").matches(":hover") || $("sbm").matches(":hover");
     const hasVideo = $("empty").hidden;                         // 已經有影片（沒有影片時舞台上只有「貼上網址」的提示）
     if (inside && typeof api()?.cursor_pos === "function") pollCursor(); else lastCursor = null;
     // 桌面版：看 YouTube 字樣在不在
@@ -1095,7 +1225,7 @@ async function pollJob(id, my) {
 function resetView() {
   segs = []; videoId = null; current = -1; listCur = -1; follow = true; partialShown = false;
   slideIdx = -1; srch.cur = -1; // 搜尋字串與面板保留，換到下一支影片照樣搜尋
-  bookmarks = []; bmFor = null; bmEditing = -1; bmDraft = ""; bmSeq++; setBmOpen(false); $("bm-wrap").hidden = true;
+  bookmarks = []; bmFor = null; bmEditing = -1; bmDraft = ""; bmSeq++; setBmOpen(false); setFsBm(false); $("bm-wrap").hidden = $("sbm").hidden = true;
   if (slideMode) {
     // 換影片（或刪除、重新處理目前這支）：退出投影片模式。投影片模式的播放器沒有控制列、而且靜音，
     // 直接拆掉；接著載入的影片會建立一個正常的播放器（有控制列、有聲音）。
