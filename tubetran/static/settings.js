@@ -110,6 +110,11 @@
 
   keyIn.addEventListener("focus", () => keyIn.select()); // 點進去整段選取：直接貼上就會取代
 
+  // 啟動時載入上次觀看的影片：記在這台電腦（app.js 的 getResumeLast／setResumeLast），切換就生效，不需按「儲存」
+  const resumeBox = $("set-resume");
+  resumeBox.checked = window.getResumeLast();
+  resumeBox.addEventListener("change", () => window.setResumeLast(resumeBox.checked));
+
   $("set-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const body = { translate_model: tSel.value, whisper_model: wSel.value };

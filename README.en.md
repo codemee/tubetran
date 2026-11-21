@@ -187,6 +187,7 @@ The settings button at the top right (left of the language button) opens a panel
 - **Claude API key:** only the first and last two characters are shown, with `*` in between; the full key is never sent back to the browser. To replace it, just paste a new one. The program starts fine without a key and opens the panel automatically so you can enter one.
 - **Translation model:** the options are the models this key can actually use, queried from Anthropic (a valid key is required).
 - **Speech-to-text (STT) model:** the options are the models officially supported by faster-whisper (from its `available_models()`); only used when a video has no captions.
+- **Load the last video on startup:** on by default. When you reopen the app it loads the video you watched last, parked at the last playback position; it only starts when you press play. Only videos that are finished and still in the library are loaded this way; in-progress, failed or deleted ones are not (so nothing starts processing, and costing translation fees, without you doing anything). This option is saved on this computer only and takes effect right away, without pressing Save.
 
 The bottom of the panel shows the program version (for example `TubeTran v0.1.9`); click it to open the releases on GitHub. On the command line, `tubetran --version` prints it too.
 

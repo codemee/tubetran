@@ -878,11 +878,12 @@ function applyNativeCaptions() {
   try { player.unloadModule("captions"); } catch (_) {}
 }
 
-async function loadVideo(id, start = 0) {
+// cue：只載入、停在 start 的畫面，不自動播放（啟動時載入上次的影片用）；沒有播放器時建立的播放器本來就不會自動播放
+async function loadVideo(id, start = 0, cue = false) {
   await apiReady;
   $("empty").hidden = true;
   $("stage").classList.remove("no-video");
-  if (player) player.loadVideoById({ videoId: id, startSeconds: start });
+  if (player) (cue ? player.cueVideoById : player.loadVideoById).call(player, { videoId: id, startSeconds: start });
   else createPlayer(id, start);
 }
 
@@ -1248,7 +1249,21 @@ function resetView() {
   renderLibrary();
 }
 
-async function openUrl(url) {
+// ── 啟動時載入上次看的影片 ──
+// 記下最後開啟的影片 ID（只存在這台電腦的 localStorage），下次啟動時若它還在影片庫、也已處理完成，就直接載入並停在
+// 上次的播放位置（不自動播放）。可以在設定面板關閉；預設開啟。
+const LAST_KEY = "tubetran.lastVideo", RESUME_LAST_KEY = "tubetran.resumeLast";
+window.getResumeLast = () => { try { return resumeLastEnabled(localStorage.getItem(RESUME_LAST_KEY)); } catch (_) { return true; } };
+window.setResumeLast = (on) => { try { localStorage.setItem(RESUME_LAST_KEY, on ? "1" : "0"); } catch (_) {} };
+function openLastVideo() {
+  if (videoId || runId || !window.getResumeLast()) return; // 使用者已經自己開了影片，或關閉了這個功能
+  let id = null;
+  try { id = localStorage.getItem(LAST_KEY); } catch (_) {}
+  id = pickResumeVideo(id, library);
+  if (id) openUrl(id, { cue: true });
+}
+
+async function openUrl(url, opts = {}) {
   saveProgress(); // 切換前先記下目前這支的進度（此時 segs／videoId 仍是舊影片）
   const my = ++runId;
   resetView();
@@ -1264,8 +1279,9 @@ async function openUrl(url) {
     const id = info.video_id;
     resumeAt = info.position || 0;
     videoId = id;
+    try { localStorage.setItem(LAST_KEY, id); } catch (_) {}
     renderLibrary();
-    loadVideo(id, resumeAt);
+    loadVideo(id, resumeAt, !!opts.cue);
     loadLibrary(); // 處理中的影片會立刻出現在右側清單
     // 之前翻到一半（或正在背景翻譯）的影片：先載入已翻好的部分，馬上就能用
     if (info.status !== "done") await showPartial(id, my);
@@ -1278,7 +1294,7 @@ async function openUrl(url) {
     setStatus(() => {
       const fixed = ranJob && data.review ? reviewSummary(data.review) : "";
       return t("status_done", { via: viaLabel(data.via), total }) +
-        (resumeAt ? t("resume_note", { time: fmt(resumeAt) }) : "") +
+        (resumeAt ? t(opts.cue ? "resume_cued" : "resume_note", { time: fmt(resumeAt) }) : "") +
         (fixed ? t("auto_checked", { summary: fixed }) : "");
     });
     loadLibrary();
@@ -1813,4 +1829,4 @@ $("library").addEventListener("keydown", (e) => {
 
 applyStaticI18n();
 paintCtrls();
-loadLibrary();
+loadLibrary().then(openLastVideo); // 影片庫載入後，再決定要不要載入上次看的影片

@@ -78,6 +78,18 @@
     }
   }
 
+  // 啟動時載入上次看的影片：設定記在這台電腦上，預設開啟（只有明確存了 "0" 才是關閉）
+  const resumeLastEnabled = (raw) => raw !== "0";
+  // 該載入哪一支：記下的影片 ID 格式要對、而且還在影片庫裡、已處理完成（status 是 done）。
+  // 處理到一半或失敗的不自動開，因為開啟影片會（重新）啟動處理，不能在使用者沒操作時花翻譯費用。
+  function pickResumeVideo(id, library) {
+    if (typeof id !== "string" || !/^[A-Za-z0-9_-]{11}$/.test(id)) return null;
+    const v = (Array.isArray(library) ? library : []).find((x) => x && x.video_id === id);
+    return v && v.status === "done" ? id : null;
+  }
+
+  root.resumeLastEnabled = resumeLastEnabled;
+  root.pickResumeVideo = pickResumeVideo;
   root.playerKeyAction = playerKeyAction;
   root.fsShouldShow = fsShouldShow;
   root.fsHotkey = fsHotkey;
@@ -87,5 +99,5 @@
   root.nextCaptionMode = nextCaptionMode;
   root.parseCaptionMode = parseCaptionMode;
   root.FS_HIDE_MS = HIDE_MS;
-  if (typeof module !== "undefined" && module.exports) module.exports = { fsShouldShow, fsLogoReading, fsHotkey, captionHotkey, bookmarkHotkey, playerKeyAction, nextCaptionMode, parseCaptionMode, CAPTION_MODES, HIDE_MS, LOGO_MIN, LOGO_MAX };
+  if (typeof module !== "undefined" && module.exports) module.exports = { fsShouldShow, fsLogoReading, fsHotkey, captionHotkey, bookmarkHotkey, playerKeyAction, resumeLastEnabled, pickResumeVideo, nextCaptionMode, parseCaptionMode, CAPTION_MODES, HIDE_MS, LOGO_MIN, LOGO_MAX };
 })(typeof window !== "undefined" ? window : globalThis);

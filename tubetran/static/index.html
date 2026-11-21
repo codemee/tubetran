@@ -69,6 +69,12 @@
             <select id="set-wmodel"></select>
             <small id="set-wmodel-hint" data-i18n="set_wmodel_hint">只在影片沒有字幕時使用；模型越大越準，也越慢、下載越大。</small>
           </label>
+          <!-- 啟動時載入上次的影片：只記在這台電腦（localStorage），切換就生效，不需按「儲存」 -->
+          <label class="fld chk">
+            <input type="checkbox" id="set-resume" checked>
+            <span data-i18n="set_resume">啟動時載入上次觀看的影片</span>
+            <small data-i18n="set_resume_hint">停在上次的播放位置，不會自動播放；設定只記在這台電腦上，切換後立即生效。</small>
+          </label>
           <div class="set-actions">
             <span id="set-msg" role="status" aria-live="polite"></span>
             <button id="set-save" class="btn primary" data-i18n="set_save">儲存</button>
