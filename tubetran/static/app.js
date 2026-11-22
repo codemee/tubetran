@@ -255,6 +255,18 @@ function fillFsBm() {
     `<button type="button" class="fbm-item" data-k="${k}"><span class="bm-time">${fmt(b.t)}</span><span class="bm-label">${esc(b.name)}</span></button>`
   ).join("");
 }
+// 從網址欄送出後，要把焦點交給播放器。播放器是之後才載入／建立的（iframe 載入會把焦點弄丟），
+// 所以先記著「還想要焦點」，在送出、載入完、播放器就緒、狀態改變時都再試一次；使用者點了別處就放棄。
+// 用程式把焦點交給 iframe 沒有用：YouTube 的快捷鍵要焦點在播放器內部的元素上（只有使用者真的點過影片才有）。
+// 所以焦點留在我們的頁面上（body），並讓 pageKeys 開啟：視窗模式也由我們用播放器 API 處理播放器快捷鍵（同全螢幕）。
+// 使用者點了頁面別處（pointerdown）就恢復原樣；點影片則焦點進 iframe，由 YouTube 原生處理。
+let wantPlayerFocus = false, pageKeys = false;
+function tryFocusPlayer() {
+  if (!wantPlayerFocus) return;
+  pageKeys = true;
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+}
+document.addEventListener("pointerdown", () => { wantPlayerFocus = false; pageKeys = false; }, true);
 function focusPlayerFrame() {
   if (inFullscreen()) { document.activeElement?.blur?.(); return; } // 全螢幕：焦點留在頁面上，由 playerKeyAction 處理播放器快捷鍵
   const frame = !slideMode && player?.getIframe?.();
@@ -714,7 +726,7 @@ document.addEventListener("keydown", (e) => {
   if (bookmarkHotkey(e) && bookmarks.length) { e.preventDefault(); toggleBookmarkMenu(); } // Alt+B：書籤清單
   // 全螢幕、焦點在頁面本身（不是按鈕、清單、輸入框，也不是 iframe）：自己處理 YouTube 的播放器快捷鍵
   const a = document.activeElement;
-  if (inFullscreen() && !slideMode && (!a || a === document.body) && player?.getPlayerState) {
+  if ((inFullscreen() || pageKeys) && !slideMode && (!a || a === document.body) && player?.getPlayerState) {
     const act = playerKeyAction(e);
     if (act) { e.preventDefault(); doPlayerKey(act); }
   }
@@ -903,8 +915,10 @@ function createPlayer(id, start, onReady) {
       ...(slideMode ? { controls: 0, disablekb: 1, iv_load_policy: 3 } : {}),
     },
     events: {
-      onReady: () => { applyNativeCaptions(); onReady?.(); },
+      onReady: () => { applyNativeCaptions(); onReady?.(); tryFocusPlayer(); },
       onStateChange: (e) => {
+        tryFocusPlayer();
+        if (e.data === YT.PlayerState.PLAYING || e.data === YT.PlayerState.CUED) wantPlayerFocus = false; // 影片已經出來了，不用再試
         // 字幕模組會在開始播放時才載入，因此每次開始播放都再套用一次（投影片模式也要，否則原字幕會出現）
         if (e.data === YT.PlayerState.PLAYING) applyNativeCaptions();
         // 停在某一格：投影片模式下任何原因開始播放（seekTo 在尚未播放時會自動開始）都立刻停住；
@@ -1211,6 +1225,8 @@ async function pollJob(id, my) {
   for (;;) {
     if (my !== runId) return false; // 使用者已切換到別支影片
     const j = await (await fetch(`/api/jobs/${id}`)).json();
+    // 等回應的這段時間使用者可能已經移除／切換影片（resetView 已把進度卡藏起來）：不要再把它顯示回來，否則會永遠卡在畫面上
+    if (my !== runId) return false;
     if (j.status === "error") throw new Error(j.error);
     if (j.status === "done") { hideProgress(); return true; }
     showProgress(j);
@@ -1281,7 +1297,7 @@ async function openUrl(url, opts = {}) {
     videoId = id;
     try { localStorage.setItem(LAST_KEY, id); } catch (_) {}
     renderLibrary();
-    loadVideo(id, resumeAt, !!opts.cue);
+    loadVideo(id, resumeAt, !!opts.cue).then(() => { if (my === runId) tryFocusPlayer(); });
     loadLibrary(); // 處理中的影片會立刻出現在右側清單
     // 之前翻到一半（或正在背景翻譯）的影片：先載入已翻好的部分，馬上就能用
     if (info.status !== "done") await showPartial(id, my);
@@ -1314,8 +1330,16 @@ $("retry").addEventListener("click", () => { if (retryId) openUrl(retryId); });
 
 $("form").addEventListener("submit", (e) => {
   e.preventDefault();
+  wantPlayerFocus = true; // 焦點交給播放器（快捷鍵有效），不要留在輸入欄位
+  tryFocusPlayer();
   openUrl($("url").value);
 });
+
+// 點進網址欄：全選，方便直接貼上新網址（已經在欄位裡時再點一下，才是移動游標）
+let urlJustFocused = false;
+$("url").addEventListener("focus", () => { $("url").select(); urlJustFocused = true; });
+$("url").addEventListener("mouseup", (e) => { if (urlJustFocused) e.preventDefault(); urlJustFocused = false; });
+$("url").addEventListener("blur", () => { urlJustFocused = false; });
 
 // ── 影片庫（已快取的影片，含翻譯進行中／中斷的） ──
 let library = [], libRetry = 0, libTimer, libKey = "";
