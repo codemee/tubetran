@@ -1435,9 +1435,11 @@ function renderLibrary() {
     libKey = "";
     $("tag-filter").dataset.html = ""; $("tag-filter").innerHTML = "";
     $("library").innerHTML = `<div class="lib-empty">${t("lib_empty")}</div>`;
+    $("lib-export-view").hidden = true;
     return;
   }
   renderTagFilter(allTags());
+  syncExportView();
   const shown = filteredLibrary();
   // 只有清單結構改變時才整個重畫（避免縮圖閃爍、失去 hover／焦點）；進度只做局部更新
   const key = JSON.stringify([
@@ -1546,16 +1548,12 @@ function libraryHtml(list) {
       <a class="yt${v.status === "done" ? " r4" : canRetry(v) ? " r3" : ""}" data-ext target="_blank" rel="noopener noreferrer" href="${ytUrl(v.video_id)}" title="${esc(t("yt_open_tip"))}" aria-label="${esc(t("yt_open"))}">${EXT_ICON}</a>
       ${v.status === "done" ? `<button class="redo" type="button" data-redo="${v.video_id}" title="${esc(t("redo"))}" aria-label="${esc(t("redo"))}">${REDO_ICON}</button>` : ""}
       ${canRetry(v) ? `<button class="redo retry" type="button" data-retry="${v.video_id}" title="${esc(t("retry_tip"))}" aria-label="${esc(t("retry"))}">${REDO_ICON}</button>` : ""}
-      ${v.status === "done" ? `<button class="chk" type="button" data-chk="${v.video_id}" title="${esc(t("chk"))}" aria-label="${esc(t("chk"))}">${CHECK_ICON}</button>` : ""}
       <button class="del" type="button" data-del="${v.video_id}" title="${esc(t("del"))}" aria-label="${esc(t("del"))}">✕</button>
     </div>`).join("");
 }
 
 // 單色向量圖示（currentColor）：在 YouTube 開啟（外連箭頭）
 const EXT_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>`;
-
-// 單色向量圖示（currentColor）：清單加勾
-const CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M4 12h6M4 17h9"/><path d="M14 15l2.6 2.6L21 12.5"/></svg>`;
 
 // 單色向量圖示（currentColor）：重新處理（循環箭頭）
 const REDO_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>`;
@@ -1587,40 +1585,6 @@ function reviewSummary(r) {
   return parts.join(t("rv_sep"));
 }
 
-function reviewMessage(r) {
-  const summary = reviewSummary(r);
-  const base = summary
-    ? t("chk_done", { summary, before: r.before, after: r.after })
-    : t("chk_none", { total: r.after });
-  return base +
-    (r.repair_error ? t("rv_repair_err", { err: r.repair_error }) : "") +
-    (r.untranslated ? t("rv_untrans", { n: r.untranslated }) : "");
-}
-
-async function checkVideo(id, btn) {
-  if (btn.disabled) return;
-  btn.disabled = true;
-  btn.classList.add("busy");
-  setStatus(() => t("chk_running"));
-  try {
-    const res = await fetch(`/api/library/${id}/check`, { method: "POST" });
-    if (!res.ok) throw new Error((await res.json()).detail);
-    const r = await res.json();
-    setStatus(() => reviewMessage(r));
-    if (r.changed) {
-      if (id === videoId) { // 正在播放這支：重新載入修正後的字幕
-        const d = await (await fetch(`/api/subtitles/${id}`)).json();
-        if (id === videoId) applySubs(d);
-      }
-      loadLibrary(); // 句數可能改變
-    }
-  } catch (err) {
-    setStatus(() => serverMsg(err.message), true);
-  } finally {
-    btn.disabled = false;
-    btn.classList.remove("busy");
-  }
-}
 
 // 尚未完成的影片：半透明＋由左向右填滿的進度，讓使用者知道工作還在進行、沒有被丟棄
 function paintStatus(v) {
@@ -1719,6 +1683,16 @@ document.addEventListener("click", async (e) => {
 const doneIds = () => library.filter((v) => v.status === "done").map((v) => v.video_id);
 $("lib-export").addEventListener("click", () => exportVideos(null));
 $("export-current").addEventListener("click", () => { if (videoId) exportVideos([videoId]); });
+// 目前篩選（標籤／無標籤／搜尋）結果裡已翻譯完成的影片；沒套用篩選時按鈕不出現
+const filterActive = () => !!(libTags.size || libUntagged || libQuery.trim());
+const viewIds = () => filteredLibrary().filter((v) => v.status === "done").map((v) => v.video_id);
+$("lib-export-view").addEventListener("click", () => { const ids = viewIds(); if (ids.length) exportVideos(ids); });
+function syncExportView() {
+  const btn = $("lib-export-view"), n = viewIds().length;
+  btn.hidden = !library.length || !filterActive() || !n;
+  btn.title = t("lib_export_view_tip", { n });
+  btn.setAttribute("aria-label", t("lib_export_view", { n }));
+}
 
 async function exportVideos(ids) {
   const n = ids ? ids.length : doneIds().length;
@@ -1792,8 +1766,6 @@ $("library").addEventListener("click", (e) => {
   if (e.target.closest("[data-ext]")) return; // 外部連結：只開 YouTube，不要同時開啟影片（開啟動作由上面的全域處理）
   const del =e.target.closest("[data-del]");
   if (del) { e.stopPropagation(); deleteVideo(del.dataset.del); return; }
-  const chk = e.target.closest("[data-chk]");
-  if (chk) { e.stopPropagation(); checkVideo(chk.dataset.chk, chk); return; }
   const redo = e.target.closest("[data-redo]");
   if (redo) { e.stopPropagation(); reprocessVideo(redo.dataset.redo); return; }
   const retry = e.target.closest("[data-retry]");

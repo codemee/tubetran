@@ -52,7 +52,16 @@
       </button>
       <div id="settings-panel" class="card" role="dialog" aria-labelledby="set-title" hidden>
         <h2 id="set-title" data-i18n="set_title">設定</h2>
-        <form id="set-form" autocomplete="off">
+        <div class="set-tabs" role="tablist">
+          <button type="button" role="tab" id="tab-set" aria-selected="true" aria-controls="set-form" data-i18n="set_tab_general">一般</button>
+          <button type="button" role="tab" id="tab-keys" aria-selected="false" aria-controls="set-keys-pane" data-i18n="set_keys">快捷鍵</button>
+        </div>
+        <!-- 快捷鍵一覽：由 settings.js 依目前語言產生，高度固定、自己捲動 -->
+        <div id="set-keys-pane" role="tabpanel" aria-labelledby="tab-keys" hidden>
+          <small data-i18n="set_keys_hint"></small>
+          <div id="set-keys"></div>
+        </div>
+        <form id="set-form" role="tabpanel" aria-labelledby="tab-set" autocomplete="off">
           <label class="fld">
             <span data-i18n="set_key">Claude API 金鑰</span>
             <input id="set-key" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="400"
@@ -282,6 +291,10 @@
                 data-i18n-attr="title:lib_export_tip;aria-label:lib_export">
           <!-- 匯出：箭頭往上離開盒子（和工具列的匯出同一個圖示） -->
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M8 7l4-4 4 4M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></svg>
+        </button>
+        <!-- 匯出目前篩選結果（標籤／無標籤／搜尋）：有套用篩選時才出現；圖示是匯出加上篩選漏斗 -->
+        <button id="lib-export-view" class="btn icon lib-io" type="button" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 4h11l-4.2 5.2V14l-2.6 1.6V9.2zM18 20v-8M15 15l3-3 3 3M15.5 20h5"/></svg>
         </button>
         <input id="lib-import-file" type="file" accept=".json,application/json" multiple hidden>
       </div>

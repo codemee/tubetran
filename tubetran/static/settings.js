@@ -83,6 +83,7 @@
 
   async function open(needKey = false) {
     panel.hidden = false;
+    showTab(false); // 每次開啟都回到一般設定（需要輸入金鑰時也才看得到輸入框）
     btn.setAttribute("aria-expanded", "true");
     setMsg(needKey ? "set_need_key" : "", needKey);
     await loadState();
@@ -139,7 +140,37 @@
     }
   });
 
-  window.repaintSettings = paint; // 切換介面語言時重畫動態文字
+  // 快捷鍵一覽（和實際的處理在 fsbutton.js／app.js／subpos.js；新增快捷鍵時也要更新這裡與 i18n 的 sc_*）
+  const KEY_GROUPS = [
+    ["sc_g_player", [
+      [["F"], "sc_fs"], [["Space", "K"], "sc_play"], [["←", "→"], "sc_seek5"], [["J", "L"], "sc_seek10"],
+      [["M"], "sc_mute"], [["↑", "↓"], "sc_vol"],
+    ]],
+    ["sc_g_sub", [
+      [["Alt+C"], "sc_cap"], [["Alt+B"], "sc_mark"], [["Alt+↑", "Alt+↓"], "sc_pos"],
+      [["←", "→", "PgUp", "PgDn"], "sc_slide"], [["Enter", "Shift+Enter"], "sc_find"],
+    ]],
+    ["sc_g_other", [[["Esc"], "sc_esc"]]],
+  ];
+  function paintKeys() {
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    $("set-keys").innerHTML = KEY_GROUPS.map(([g, rows]) =>
+      `<h3>${esc(t(g))}</h3>` + rows.map(([keys, desc]) =>
+        `<div class="krow"><span>${esc(t(desc))}</span><span class="keycaps">${keys.map((k) => `<kbd>${esc(k)}</kbd>`).join("")}</span></div>`).join("")).join("");
+  }
+  paintKeys();
+
+  // 分頁：一般設定／快捷鍵
+  function showTab(keys) {
+    $("set-form").hidden = keys;
+    $("set-keys-pane").hidden = !keys;
+    $("tab-set").setAttribute("aria-selected", String(!keys));
+    $("tab-keys").setAttribute("aria-selected", String(keys));
+  }
+  $("tab-set").addEventListener("click", () => showTab(false));
+  $("tab-keys").addEventListener("click", () => showTab(true));
+
+  window.repaintSettings = () => { paint(); paintKeys(); }; // 切換介面語言時重畫動態文字
 
   // 啟動時檢查：沒有金鑰就直接打開面板
   fetch("/api/settings").then((r) => r.json()).then((s) => { if (!s.has_key) open(true); }).catch(() => {});

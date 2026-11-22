@@ -74,7 +74,6 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
   |---|---|
   | ↗ Open on YouTube | Go back to YouTube for comments and related videos |
   | ↻ Reprocess | Discard the current translation, fetch captions again and retranslate sentence by sentence (calls Claude again); watch progress and tags are kept. Use it to convert videos translated by older versions to one sentence per subtitle |
-  | ☑ Check subtitles | Merge duplicates, fix timing, fill in blank translations (also runs once automatically after translation) |
   | ✕ Delete | Delete the cache; for a video still being processed, cancel it and clean up |
 - Light and dark themes, and Traditional Chinese / English interface. Both are three-state buttons: auto (follow the system, the default) → manual choices.
 
@@ -187,6 +186,7 @@ The settings button at the top right (left of the language button) opens a panel
 - **Claude API key:** only the first and last two characters are shown, with `*` in between; the full key is never sent back to the browser. To replace it, just paste a new one. The program starts fine without a key and opens the panel automatically so you can enter one.
 - **Translation model:** the options are the models this key can actually use, queried from Anthropic (a valid key is required).
 - **Speech-to-text (STT) model:** the options are the models officially supported by faster-whisper (from its `available_models()`); only used when a video has no captions.
+- **Shortcuts tab:** the panel has two tabs, General and Shortcuts; Shortcuts lists every keyboard shortcut (player, subtitles, other) in a fixed-height list that scrolls on its own.
 - **Load the last video on startup:** on by default. When you reopen the app it loads the video you watched last, parked at the last playback position; it only starts when you press play. Only videos that are finished and still in the library are loaded this way; in-progress, failed or deleted ones are not (so nothing starts processing, and costing translation fees, without you doing anything). This option is saved on this computer only and takes effect right away, without pressing Save.
 
 The bottom of the panel shows the program version (for example `TubeTran v0.1.9`); click it to open the releases on GitHub. On the command line, `tubetran --version` prints it too.
@@ -232,7 +232,7 @@ Clicking ✕ in the library deletes that video's whole `cache/<video_id>/` folde
 
 ### Moving translated videos to another computer
 
-**Export / import (recommended):** at the top of the library, to the right of the search box, are the "Import" (arrow into a box) and "Export all" (arrow out of a box) icons; hover to see their names.
+**Export / import (recommended):** at the top of the library, to the right of the search box, are the "Import" (arrow into a box) and "Export all" (arrow out of a box) icons; hover to see their names. When a tag, "No tags" or search filter is applied, an extra "Export current filter" icon (funnel with arrow) appears, exporting only the fully translated videos in the filtered result.
 
 ![Import and Export all at the top of the library](https://raw.githubusercontent.com/codemee/tubetran/main/docs/images/library-io.png)
 
@@ -242,6 +242,7 @@ Clicking ✕ in the library deletes that video's whole `cache/<video_id>/` folde
    |---|---|---|---|
    | Export | The toolbar below the player (shown once translated) | The video being played | `<translated title>.json` (only the first 40 characters if longer) |
    | Export all | Top of the library | Every fully translated video | `tubetran-<date>-<count>.json` |
+   | Export current filter | Top of the library (only while a filter is applied) | Fully translated videos in the current filter result | `tubetran-<date>-<count>.json` |
 
 2. Take the file to the other computer and press the "Import" icon at the top of the library to choose it (you can pick several files). The videos appear in the library, with playback position and tags.
 3. Videos the other computer already has are skipped, not overwritten. The export contains translations, subtitles, glossary, playback position and tags, but no audio; no API key is needed to watch.
