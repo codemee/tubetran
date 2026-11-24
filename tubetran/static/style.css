@@ -277,6 +277,13 @@ body {
   font-size: clamp(14px, 2.6cqw, 44px); line-height: 1.4; color: #fff;
   text-shadow: 0 1px 2px #000;
 }
+/* 全螢幕時 YouTube 控制列一淡出，瀏覽器會把影片改成硬體疊層直接輸出；只要有東西蓋在影片區上才會退回一般合成。
+   21:9 之類的影片，字幕若整個落在上下黑邊（沒碰到影片區）就會被略過而消失。
+   所以在整個播放區蓋一層幾乎全透明的遮罩（肉眼看不出來、不攔截點擊），讓影片永遠不被當成疊層 */
+#stage:fullscreen::after, #stage.pseudo-fs::after {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: rgba(0, 0, 0, .02);
+}
 /* 每行字幕自帶半透明黑底，才不會和影片畫面（尤其是燙在影片上的字）混在一起 */
 #overlay div {
   width: fit-content; max-width: 100%; margin: .2em auto 0; padding: .08em .55em .12em;
