@@ -116,6 +116,58 @@ def put_bookmarks(video_id: str, req: BookmarksReq):
     return {"bookmarks": saved}
 
 
+class GlossaryReq(BaseModel):
+    # 每一項 {"term": 原文, "trans": 譯法}；用清單而不是物件，順序與重複的原文由後端整理
+    glossary: list[dict[str, str]] = Field(max_length=200)
+
+
+def _glossary_json(g: dict) -> dict:
+    return {"glossary": [{"term": k, "trans": v} for k, v in g["glossary"].items()], "edited": g["edited"]}
+
+
+@app.get("/api/library/{video_id}/glossary")
+def get_glossary(video_id: str):
+    if not jobs.VIDEO_ID_RE.fullmatch(video_id):
+        raise HTTPException(400, "不合法的影片 ID")
+    g = jobs.load_glossary(video_id)
+    if g is None:
+        raise HTTPException(404, "找不到已完成的字幕")
+    return _glossary_json(g)
+
+
+@app.put("/api/library/{video_id}/glossary")
+def put_glossary(video_id: str, req: GlossaryReq):
+    try:
+        g = jobs.save_glossary(video_id, [(i.get("term", ""), i.get("trans", "")) for i in req.glossary])
+    except ValueError:
+        raise HTTPException(400, "不合法的影片 ID")
+    if g is None:
+        raise HTTPException(404, "找不到已完成的字幕")
+    return _glossary_json(g)
+
+
+class RetranslateReq(BaseModel):
+    reset_glossary: bool = False  # True：丟掉術語表（含手動編輯），重新自動整理
+
+
+@app.post("/api/library/{video_id}/retranslate")
+def retranslate_library_item(video_id: str, req: RetranslateReq | None = None):
+    """用目前的術語表重新翻譯（字幕沿用）。和 reprocess 一樣先檢查金鑰，沒有金鑰就不要先把舊的翻譯刪掉。"""
+    try:
+        config.get_api_key()
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    try:
+        result = jobs.retranslate_video(video_id, bool(req and req.reset_glossary))
+    except ValueError:
+        raise HTTPException(400, "不合法的影片 ID")
+    if result is None:
+        raise HTTPException(404, "找不到已完成的字幕")
+    if result == "busy":
+        raise HTTPException(409, "影片仍在處理中，請等它完成後再重新翻譯")
+    return jobs.job_dict(result)
+
+
 @app.post("/api/library/{video_id}/check")
 def check_library_item(video_id: str):
     try:

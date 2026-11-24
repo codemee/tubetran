@@ -9,7 +9,7 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
 
 - Downloads YouTube captions first (manual captions in the video's own language preferred, then auto-generated; captions in other languages are ignored); when there are none, downloads the audio and transcribes it locally with Whisper.
 - Videos whose captions are already Traditional Chinese are not sent to the Claude API (saves time and cost): the original is used as the translation, and bilingual mode and SRT / VTT show each line once. YouTube often labels Traditional captions as plain "Chinese", so the app checks the caption text to tell Traditional from Simplified; Simplified Chinese captions are still translated into Traditional Chinese (Taiwan usage). For videos you translated earlier, press ↻ in the library to reprocess and apply this.
-- Translates to Traditional Chinese (Taiwan usage) with the Claude API, including the video title. Subtitles are shown one sentence at a time: auto-caption fragments that break mid-sentence are first regrouped into whole sentences before translation, so translations never drift out of alignment, and terms (such as namespace or cgroup) are translated consistently across the whole video.
+- Translates to Traditional Chinese (Taiwan usage) with the Claude API, including the video title. Subtitles are shown one sentence at a time: auto-caption fragments that break mid-sentence are first regrouped into whole sentences before translation, so translations never drift out of alignment, and terms (such as namespace or cgroup) are translated consistently across the whole video; you can also edit the glossary and retranslate (see "Glossary" below).
 - Subtitles are overlaid on the video and stay visible in fullscreen; long subtitles are wrapped into two lines of similar length, breaking after punctuation where possible. Switch between bilingual / original / translation / none (no subtitles, for listening practice) — press Alt+C any time in fullscreen — and download SRT / VTT. YouTube's own captions are always hidden and replaced by ours.
 - URL box: a click selects all the text, so you can just paste a new URL; after Enter or "Load", keyboard focus leaves the box and player shortcuts such as Space, arrow keys and M work right away (click elsewhere on the page to go back to normal; in slide mode ← → still mean previous/next subtitle).
 - The toolbar below the player (icon buttons; hover to see their names):
@@ -22,6 +22,7 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
   | Presentation board | Slide mode (see the next item); the icon turns to the accent colour while on |
   | Trash can | Delete this video's slide images (saves space); shown only when there are captured images |
   | Magnifier | Search subtitles (see "Search subtitles" below); the icon turns to the accent colour while open |
+  | Dictionary | View and edit this video's glossary, and retranslate with it (see "Glossary" below); shown once translated |
   | Bookmark | List this video's bookmarks; click one to jump to its subtitle (see "Bookmarks" below); shown only when the video has bookmarks |
   | Download SRT / VTT | Download the subtitle file (following the current subtitle mode; "none" downloads bilingual) |
   | Export arrow | Export this video to import on another computer (shown once translated) |
@@ -47,6 +48,24 @@ One program, two ways to run it: a **desktop app** (just run it) or a **server**
 
   - Only the text shown in the list is searched: bilingual mode searches both the original and the translation; original or translation mode searches only that one.
   - The options are remembered on this computer; the search text is kept when you switch videos.
+- Glossary (the dictionary icon in the toolbar): when translating, the terms of the whole video follow the translations in this list; if one looks wrong, change it yourself and retranslate.
+
+  | Action | What it does |
+  |---|---|
+  | Press the dictionary icon | Opens the glossary panel; each row is "original → translation" |
+  | Edit the text, press "Add term", press the ✕ at the end of a row | Change a translation, add a term, remove a term; Enter in the original box moves to the translation box, Enter in the translation box moves to the next row |
+  | Search terms | The search box at the top of the panel matches both the original and the translation (ignoring case); rows that don't match are hidden for now, with "matches / total" on the right; Esc clears the search, and a second Esc closes the panel |
+  | Save | Only stores your changes, without retranslating |
+  | Save and retranslate | Stores them, then translates the whole video's subtitles and title again with this glossary (calls Claude; asks first) |
+  | Reset to automatic | Throws this glossary away (including your edits), builds a new one by reading the whole video again, and retranslates (calls Claude; asks first) |
+  | Esc / press the dictionary icon again | Closes the panel |
+
+  - A translation identical to the original means "keep it untranslated"; rows with the same original (ignoring case) keep only the last one, and empty rows are not saved.
+  - Up to 40 terms, with the original and the translation each up to 60 characters.
+  - Retranslating reuses the original captions (nothing is downloaded or transcribed again); tags, bookmarks, playback position and slides are kept.
+  - A glossary you have edited is kept when you later reprocess the video with ↻ in the library, and the panel shows "edited by hand".
+  - The glossary is saved with the video in the local cache folder, and travels with it when you export / import (including the "edited by hand" mark).
+  - Videos whose original captions are already Traditional Chinese are not translated, so they have no glossary and no dictionary icon.
 - Bookmarks: mark important lines and jump back to them with one click.
 
   | Action | What it does |
@@ -225,7 +244,7 @@ Contents:
 | --- | --- |
 | `settings.json` | Settings saved by the settings panel: API key (plain text), translation model, STT model |
 | `.env` | (Optional, legacy) read-only; if present, the lowest-priority source of settings |
-| `cache/<video_id>/` | Per-video cache: `subs.json` (subtitles: raw fragments and regrouped sentences), `glossary.json` (glossary), `translated.json` (final result), `trans_partial.json` (translation checkpoint, removed when finished), `progress.json` (playback position), `tags.json` (tags; up to 10, 20 characters each), `audio.*` (audio, when there were no captions), `translated.pre-check.json` (backup taken before a manual check), `slides/` (slide-mode images: one JPEG per subtitle) |
+| `cache/<video_id>/` | Per-video cache: `subs.json` (subtitles: raw fragments and regrouped sentences), `glossary.json` (glossary), `glossary_edited.json` (present when the glossary was edited by hand), `translated.json` (final result), `trans_partial.json` (translation checkpoint, removed when finished), `progress.json` (playback position), `tags.json` (tags; up to 10, 20 characters each), `audio.*` (audio, when there were no captions), `translated.pre-check.json` (backup taken before a manual check), `slides/` (slide-mode images: one JPEG per subtitle) |
 | `webview/` | The desktop app's browser data (theme and language settings, cookies); excluded by `.gitignore` |
 | `tubetran.log` | Output log when there is no console (for example when launched by double-click) |
 

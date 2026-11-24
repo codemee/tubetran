@@ -224,6 +224,12 @@
           <!-- 放大鏡 -->
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
         </button>
+        <!-- 術語表：翻譯完成的影片才出現；按下展開編輯面板（修改、新增術語，並可用它重新翻譯） -->
+        <button id="gl-toggle" class="btn icon tb" type="button" hidden aria-pressed="false" aria-expanded="false" aria-controls="gl-panel"
+                title="術語表" aria-label="術語表" data-i18n-attr="title:gl_tip;aria-label:gl">
+          <!-- 字典：書頁加上兩條文字線 -->
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3M9 8h6M9 12h4"/></svg>
+        </button>
         <!-- 書籤：這支影片有書籤時才出現；按下展開書籤清單，點一個書籤跳到對應的字幕 -->
         <div id="bm-wrap" hidden>
           <button id="bm-toggle" class="btn icon tb" type="button" aria-pressed="false" aria-expanded="false" aria-controls="bm-panel"
@@ -263,6 +269,25 @@
             <label><input id="search-word" type="checkbox"><span data-i18n="search_word">完整單字</span></label>
             <label><input id="search-re" type="checkbox"><span data-i18n="search_re">規則表達式</span></label>
             <label data-i18n-attr="title:search_seek_tip"><input id="search-seek" type="checkbox"><span data-i18n="search_seek">影片也跳過去</span></label>
+          </div>
+        </div>
+        <!-- 術語表面板：按字典圖示展開，佔工具列一整行。列由 glossary.js 產生 -->
+        <div id="gl-panel" role="group" aria-label="術語表" hidden data-i18n-attr="aria-label:gl">
+          <p id="gl-hint" class="gl-hint" data-i18n="gl_hint"></p>
+          <!-- 搜尋：同時比對原文與譯法（不分大小寫），只隱藏不符合的列，不影響儲存的內容 -->
+          <div class="gl-search">
+            <input id="gl-q" type="search" autocomplete="off" spellcheck="false" placeholder="搜尋術語"
+                   aria-label="搜尋術語" data-i18n-attr="placeholder:gl_find;aria-label:gl_find">
+            <span id="gl-count" aria-live="polite"></span>
+          </div>
+          <div id="gl-rows"></div>
+          <div class="gl-actions">
+            <button id="gl-add" class="btn" type="button" data-i18n="gl_add">新增術語</button>
+            <span id="gl-state"></span>
+            <span id="gl-msg" role="status" aria-live="polite"></span>
+            <button id="gl-reset" class="btn" type="button" data-i18n="gl_reset" data-i18n-attr="title:gl_reset_tip">重設為自動整理</button>
+            <button id="gl-save" class="btn" type="button" data-i18n="gl_save" data-i18n-attr="title:gl_save_tip">儲存</button>
+            <button id="gl-retrans" class="btn primary" type="button" data-i18n="gl_retrans" data-i18n-attr="title:gl_retrans_tip">儲存並重新翻譯</button>
           </div>
         </div>
       </div>
@@ -318,6 +343,7 @@
   <script src="/static/search.js"></script>
   <script src="/static/subpos.js"></script>
   <script src="/static/app.js"></script>
+  <script src="/static/glossary.js"></script>
   <script src="/static/settings.js"></script>
   <script src="/static/desktop.js"></script>
 </body>

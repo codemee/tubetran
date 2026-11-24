@@ -362,6 +362,68 @@ def save_bookmarks(video_id: str, items) -> list[dict] | None:
     return clean
 
 
+# ── 術語表：cache/<id>/glossary.json（{原文: 譯法}）。翻譯時自動整理；使用者也可以手動編輯 ──
+# 手動編輯過就多一個標記檔 glossary_edited.json：之後按 ↻ 重新處理時保留這份術語表，不會被自動整理的結果蓋掉。
+GLOSSARY_KEY_MAX = 60
+GLOSSARY_VALUE_MAX = 60
+
+
+def glossary_path(video_id: str):
+    return config.CACHE_DIR / video_id / "glossary.json"
+
+
+def glossary_edited_path(video_id: str):
+    return config.CACHE_DIR / video_id / "glossary_edited.json"
+
+
+def normalize_glossary(items) -> dict[str, str]:
+    """清理術語表：合併空白、截斷長度、略過原文或譯法是空的、原文忽略大小寫去重（保留最後一次的寫法）、限制數量。"""
+    out: dict[str, tuple[str, str]] = {}
+    pairs = items.items() if isinstance(items, dict) else items if isinstance(items, list) else []
+    for pair in pairs:
+        try:
+            k, v = pair
+        except (TypeError, ValueError):
+            continue
+        k = re.sub(r"\s+", " ", str(k)).strip()[:GLOSSARY_KEY_MAX].strip()
+        v = re.sub(r"\s+", " ", str(v)).strip()[:GLOSSARY_VALUE_MAX].strip()
+        if k and v:
+            out.pop(k.casefold(), None)  # 後面的覆蓋前面的，順序也跟著挪到後面
+            out[k.casefold()] = (k, v)
+    return dict(list(out.values())[: translate.GLOSSARY_MAX])
+
+
+def load_glossary(video_id: str) -> dict | None:
+    """回傳 {"glossary": {原文: 譯法}, "edited": 是否手動編輯過}；找不到已完成的影片回傳 None。"""
+    if not VIDEO_ID_RE.fullmatch(video_id) or not result_path(video_id).exists():
+        return None
+    g = _read_json(glossary_path(video_id)) if glossary_path(video_id).exists() else None
+    if not isinstance(g, dict):  # 沒有獨立的檔案（舊快取）時，退而求其次用翻譯結果裡帶的那份
+        g = (load_result(video_id) or {}).get("glossary")
+    return {"glossary": normalize_glossary(g), "edited": glossary_edited_path(video_id).exists()}
+
+
+def save_glossary(video_id: str, items) -> dict | None:
+    """儲存手動編輯的術語表並回傳清理後的結果。只存、不重新翻譯：之後要重翻再呼叫 retranslate_video。
+    找不到已完成的影片時回傳 None。"""
+    if not VIDEO_ID_RE.fullmatch(video_id):
+        raise ValueError("不合法的影片 ID")
+    clean = normalize_glossary(items)
+    with _rw_lock:  # 和「檢查」一樣會改 translated.json
+        f = result_path(video_id)
+        data = _read_json(f) if f.exists() else None
+        if data is None:
+            return None
+        try:
+            _write_json(glossary_path(video_id), clean)
+            _write_json(glossary_edited_path(video_id), {"edited": True})
+            data["glossary"] = clean
+            _write_json(f, data)
+        except OSError:  # 與刪除同時發生時，資料夾可能剛好消失
+            return None
+    return {"glossary": clean, "edited": True}
+
+
 def list_library() -> list[dict]:
     """列出快取中的影片。
 
@@ -553,12 +615,37 @@ def reprocess_video(video_id: str) -> Job | str | None:
                 _write_json(subs_path(video_id), subs)
             else:
                 subs_path(video_id).unlink(missing_ok=True)
-            for p in (result_path(video_id), checkpoint_path(video_id),
-                      result_path(video_id).with_name("translated.pre-check.json"),
-                      result_path(video_id).with_name("glossary.json")):
+            doomed = [result_path(video_id), checkpoint_path(video_id),
+                      result_path(video_id).with_name("translated.pre-check.json")]
+            if not glossary_edited_path(video_id).exists():  # 手動編輯過的術語表保留，沒編輯過的才重新自動整理
+                doomed.append(glossary_path(video_id))
+            for p in doomed:
                 p.unlink(missing_ok=True)
             shutil.rmtree(slides_dir(video_id), ignore_errors=True)  # 句子會變，投影片畫面要重新擷取
         _cancel_slides(video_id)
+        _jobs.pop(video_id, None)
+    return start_job(video_id)
+
+
+def retranslate_video(video_id: str, reset_glossary: bool = False) -> Job | str | None:
+    """用目前的術語表重新翻譯整支影片（字幕與句子沿用，不重新下載或辨識；標籤、書籤、播放位置、投影片都保留）。
+    reset_glossary=True 時丟掉術語表（含手動編輯），重新自動整理。
+    回傳新的 Job；找不到已翻譯完成的影片回傳 None；正在處理中回傳 "busy"。"""
+    if not VIDEO_ID_RE.fullmatch(video_id):
+        raise ValueError("不合法的影片 ID")
+    with _lock:
+        job = _jobs.get(video_id)
+        if job and job.status == "running":
+            return "busy"
+        if not (result_path(video_id).exists() and subs_path(video_id).exists()):
+            return None
+        with _rw_lock:
+            doomed = [result_path(video_id), checkpoint_path(video_id),
+                      result_path(video_id).with_name("translated.pre-check.json")]
+            if reset_glossary:
+                doomed += [glossary_path(video_id), glossary_edited_path(video_id)]
+            for p in doomed:
+                p.unlink(missing_ok=True)
         _jobs.pop(video_id, None)
     return start_job(video_id)
 
@@ -685,7 +772,8 @@ def slide_image(video_id: str, index: int):
 # 匯出檔是一個 JSON：{"format": "tubetran-export", "version": 1, "videos": [{"video_id": ..., "files": {檔名: 內容}}]}。
 # 只帶這些檔案（都是 JSON）；音檔不帶（可能數十 MB，辨識完就用不到）。translated.json 是必要的。
 EXPORT_FORMAT = "tubetran-export"
-EXPORT_FILES = ("translated.json", "subs.json", "glossary.json", "progress.json", "tags.json", "bookmarks.json")
+EXPORT_FILES = ("translated.json", "subs.json", "glossary.json", "glossary_edited.json",
+                "progress.json", "tags.json", "bookmarks.json")
 
 
 def export_bundle(video_ids: list[str] | None = None) -> dict:

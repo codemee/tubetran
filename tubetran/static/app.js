@@ -109,6 +109,7 @@ function onLangChange() {
   if (lastJob && !$("progress").hidden) showProgress(lastJob);
   window.repaintSettings?.();
   window.repaintDesktop?.();
+  window.glossaryLang?.();
 }
 // 三態按鈕：自動（跟隨系統語言）→ 繁體中文 → English → 自動
 $("lang-btn").addEventListener("click", () => {
@@ -1200,6 +1201,7 @@ function applySubs(data) {
   $("bar").hidden = false;
   $("transcript").hidden = false; // 預設維持收合
   $("dl-srt").hidden = $("dl-vtt").hidden = $("export-current").hidden = !data.complete; // 下載、匯出需等翻譯完成
+  window.glossarySync?.(data); // 術語表鈕也要等翻譯完成才出現
   renderList();
   if (slideMode) { // 換了影片（或字幕更新了）：停在目前位置的那一則
     if (slideIdx < 0) gotoSlide(Math.max(0, lastStarted(player?.getCurrentTime?.() || 0)));
@@ -1261,6 +1263,7 @@ function resetView() {
   $("list").innerHTML = ""; $("overlay").innerHTML = "";
   $("bar").hidden = true; $("transcript").hidden = true;
   $("transcript").open = false;
+  window.glossaryReset?.();
   hideProgress();
   renderLibrary();
 }
