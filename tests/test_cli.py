@@ -22,14 +22,20 @@ def test_invalid_port_exits_with_code_2(capsys):
     assert e.value.code == 2
 
 
-def test_desktop_port_is_stable_then_falls_back_when_busy():
+def test_desktop_port_is_stable_then_falls_back_when_busy(monkeypatch):
     # 固定埠讓 localStorage 的來源在每次啟動都相同；被占用時才退回隨機埠
-    assert cli._pick_port() == cli.DESKTOP_PORT
+    # 不直接用真正的 47321：開著水管譯工時它已被占用。改請系統給一個空的埠來代替
     import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        free = s.getsockname()[1]
+    monkeypatch.setattr(cli, "DESKTOP_PORT", free)
+
+    assert cli._pick_port() == free
     with socket.socket() as busy:
-        busy.bind(("127.0.0.1", cli.DESKTOP_PORT))
+        busy.bind(("127.0.0.1", free))
         other = cli._pick_port()
-        assert other != cli.DESKTOP_PORT and 1024 < other < 65536
+        assert other != free and 1024 < other < 65536
 
 
 def test_app_icon_is_a_valid_multi_size_ico():
