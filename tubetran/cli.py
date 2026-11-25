@@ -210,6 +210,9 @@ class _DesktopApi:
         self._move_origin = None
         self._port = 0  # 本機後端的埠號（save_download 向它取得要下載的內容）
         self._title = INITIAL_WINDOW_TITLE  # 目前的視窗標題（_hwnd 取不到控制代碼時用來找視窗）
+        self._unsaved = ""       # 網頁回報的「有未儲存的修改」提示文字（空字串＝沒有）；關閉視窗時用它決定要不要先問
+        self._close_confirmed = False  # 網頁自己的關閉鈕已經問過了（window_close），關閉事件不要再問第二次
+        self._asking = False     # 正在請網頁顯示「放棄未儲存的修改？」（避免連按 Alt+F4 時重複去問）
 
     def set_window_title(self, title):
         """網頁依語系切換標題時同步到桌面視窗：pywebview 不會自己跟著 document.title 走，
@@ -510,8 +513,50 @@ class _DesktopApi:
             if hwnd:
                 winctl.notify_move_size(hwnd, False)
 
+    def set_unsaved(self, message):
+        """網頁回報：目前有沒有未儲存的修改（術語表）。有的話 message 是要顯示給使用者的確認文字（已依介面語言翻譯），沒有就傳空字串。
+        用 Alt+F4、工作列關閉視窗這類不經過網頁關閉鈕的方式關閉時，網頁收不到任何通知，所以改由網頁事先告訴這裡，
+        關閉事件（_on_closing）再依它決定要不要先問。"""
+        message = str(message or "").strip()
+        self._unsaved = message[:300]
+        return True
+
+    def _on_closing(self):
+        """視窗要關閉時（pywebview 的 closing 事件，在 UI 執行緒同步執行；回傳 False 就取消關閉）。
+        術語表有未儲存的修改時：先取消這次關閉，改請網頁用自製對話框問（外觀和應用程式一致）；使用者確定放棄，網頁再呼叫
+        window_close 真的關閉。網頁自己的關閉鈕（window_close）已經問過，不再問第二次。
+        不能在這裡直接 evaluate_js（事件在 UI 執行緒上，會死鎖），所以另開執行緒去問。
+        只在 Windows 啟用：其他平台沒有驗證過，那裡仍由網頁的關閉鈕與瀏覽器的離開確認處理。"""
+        if self._close_confirmed or not self._unsaved or sys.platform != "win32" or self._window is None:
+            return None
+        if not self._asking:
+            self._asking = True
+            threading.Thread(target=self._ask_close, name="ask-close", daemon=True).start()
+        return False
+
+    def _ask_close(self):
+        """請網頁顯示「放棄未儲存的修改？」對話框。視窗最小化時（從工作列關閉）先還原，使用者才看得到。
+        網頁問不了（腳本出錯、頁面壞了）就退回系統的確認框；連它都出錯就放行關閉，不能讓程式關不掉。"""
+        try:
+            hwnd = self._hwnd()
+            if hwnd and winctl.is_iconic(hwnd):
+                self._window.restore()
+            shown = self._window.evaluate_js("(window.askLeaveThenClose ? (window.askLeaveThenClose(), true) : false)")
+            if shown is not True:
+                raise RuntimeError("網頁沒有回應")
+        except Exception:  # noqa: BLE001
+            try:
+                ok = bool(self._window.create_confirmation_dialog(self._title, self._unsaved))
+            except Exception:  # noqa: BLE001
+                ok = True
+            if ok:
+                self.window_close()
+        finally:
+            self._asking = False
+
     def window_close(self):
         if self._window is not None:
+            self._close_confirmed = True  # 網頁已經確認過了（有未儲存的修改時 desktop.js 會先問）
             self._window.destroy()
 
     # ── 邊緣縮放：頁面在 pointerdown 時 begin，移動時回報位移（實體像素），放開時 end ──
@@ -687,6 +732,7 @@ def run_desktop(native_titlebar: bool = False) -> int:
         )
         api._window.events.shown += api._on_shown
         api._window.events.restored += api._on_restored
+        api._window.events.closing += api._on_closing
         # private_mode=False + storage_path：保留 localStorage（主題、語言設定）與 cookie
         # icon：視窗標題列／工作列的圖示。沒指定時 Windows 會用 python.exe 的圖示（開發模式）
         webview.start(

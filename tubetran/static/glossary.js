@@ -9,6 +9,21 @@
   let draft = [];      // [{ term, trans }]：畫面上正在編輯的內容
   let edited = false;  // 後端回報：這份術語表是否被手動編輯過
   let loadedFor = null, busy = false, msgKey = null, seq = 0;
+  // 有沒有未儲存的修改：和「後端目前的內容」（載入或儲存完的樣子）比較。空白列（新增了還沒填）不算修改；前後空白與連續空白也不算。
+  let baseline = "[]";
+  const sig = () => JSON.stringify(draft
+    .map((r) => [r.term.trim().replace(/\s+/g, " "), r.trans.trim()])
+    .filter(([a, b]) => a || b));
+  const isDirty = () => !!loadedFor && sig() !== baseline;
+  // 桌面版：有沒有未儲存的修改要先告訴 Python（Alt+F4、工作列關閉視窗不經過網頁，網頁收不到通知，只能由 Python 在關閉事件裡問）。
+  // 只在狀態或提示文字（介面語言）改變時才通知
+  let notified = "";
+  function notifyUnsaved(dirty) {
+    const msg = dirty ? t("confirm_gl_discard") : "";
+    if (msg === notified) return;
+    notified = msg;
+    try { window.pywebview?.api?.set_unsaved?.(msg)?.catch?.(() => {}); } catch (_) {}
+  }
 
   const isOpen = () => !panel.hidden;
 
@@ -42,7 +57,11 @@
   }
 
   function renderState() {
-    $("gl-state").textContent = loadedFor ? t(edited ? "gl_edited" : "gl_auto") : "";
+    const dirty = isDirty();
+    $("gl-state").textContent = loadedFor ? t(edited ? "gl_edited" : "gl_auto") + (dirty ? " · " + t("gl_dirty") : "") : "";
+    $("gl-state").classList.toggle("dirty", dirty);
+    btn.dataset.dirty = dirty ? "1" : "0"; // 鈕上的小圓點：收合了也看得出有未儲存的修改
+    notifyUnsaved(dirty);
     $("gl-add").disabled = busy || draft.length >= MAX_TERMS;
     $("gl-add").title = draft.length >= MAX_TERMS ? t("gl_max", { n: MAX_TERMS }) : "";
   }
@@ -91,6 +110,7 @@
       if (my !== seq || id !== videoId) return;
       draft = data.glossary.map((g) => ({ term: g.term, trans: g.trans }));
       edited = data.edited; loadedFor = id;
+      baseline = sig();
       msgKey = null; setMsg("");
       render();
     } catch (err) {
@@ -101,6 +121,7 @@
 
   function setOpen(open, focus = false) {
     panel.hidden = !open;
+    if (open) $("transcript").open = false; // 面板在字幕清單的下面：展開術語表時收起字幕清單（反過來也一樣，見下面的 toggle 監聽）
     btn.setAttribute("aria-pressed", String(open));
     btn.setAttribute("aria-expanded", String(open));
     if (!open) { if (focus) btn.focus(); return; }
@@ -121,7 +142,7 @@
     const data = await res.json();
     if (id === videoId) {
       draft = data.glossary.map((g) => ({ term: g.term, trans: g.trans }));
-      edited = data.edited; render();
+      edited = data.edited; baseline = sig(); render();
     }
     return data;
   }
@@ -149,10 +170,13 @@
       body: JSON.stringify({ reset_glossary: resetGlossary }),
     });
     if (!res.ok) throw new Error((await res.json()).detail);
+    baseline = sig(); // 這些修改已經由使用者明確處理（儲存，或按「重設」捨棄），切換時不要再問一次
     openUrl(id); // resetView 會呼叫 glossaryReset() 收起面板
   }
 
   btn.addEventListener("click", () => setOpen(!isOpen()));
+  // 面板在字幕清單卡片的下面：兩者互斥，展開字幕清單時術語表自動收合（展開術語表時收起字幕清單在 setOpen 裡）
+  $("transcript").addEventListener("toggle", () => { if ($("transcript").open && isOpen()) setOpen(false); });
 
   $("gl-add").addEventListener("click", () => {
     if (busy || draft.length >= MAX_TERMS) return;
@@ -170,6 +194,7 @@
     if (e.target.classList.contains("gl-term")) r.term = e.target.value;
     else r.trans = e.target.value;
     markDups();
+    renderState(); // 未儲存的標記跟著打字更新
     applyFilter(); // 改到的字可能讓這一列不再符合搜尋，但不要在打字時就把它藏起來：只更新計數
     row.hidden = false;
   });
@@ -207,13 +232,13 @@
     setMsg(t("gl_saved", { n: data.glossary.length }));
   }));
 
-  $("gl-retrans").addEventListener("click", () => {
-    if (busy || !confirm(t("confirm_gl_retrans", { name: videoName() }))) return;
+  $("gl-retrans").addEventListener("click", async () => {
+    if (busy || !(await appConfirm(t("confirm_gl_retrans", { name: videoName() }), { ok: t("modal_retrans") })) || busy) return;
     run(async () => { await save(); await retranslate(false); });
   });
 
-  $("gl-reset").addEventListener("click", () => {
-    if (busy || !confirm(t("confirm_gl_reset", { name: videoName() }))) return;
+  $("gl-reset").addEventListener("click", async () => {
+    if (busy || !(await appConfirm(t("confirm_gl_reset", { name: videoName() }), { ok: t("modal_reset") })) || busy) return;
     run(() => retranslate(true));
   });
 
@@ -228,9 +253,21 @@
     if (!show && isOpen()) setOpen(false);
   };
   window.glossaryReset = () => {
-    seq++; loadedFor = null; draft = []; msgKey = null; setMsg(""); $("gl-q").value = "";
-    btn.hidden = true;
+    seq++; loadedFor = null; draft = []; baseline = "[]"; msgKey = null; setMsg(""); $("gl-q").value = "";
+    btn.hidden = true; btn.dataset.dirty = "0"; notifyUnsaved(false);
     setOpen(false);
   };
-  window.glossaryLang = () => { if (isOpen()) render(); }; // 切換介面語言：列的提示文字重畫
+  window.glossaryLang = () => { if (isOpen()) render(); notifyUnsaved(isDirty()); }; // 切換介面語言：列的提示文字重畫，通知 Python 的提示文字也換
+  // 離開前的確認：切換影片（app.js 的 openUrl）、桌面版自製的關閉鈕（desktop.js）會先問；沒有未儲存的修改就直接過
+  // 離開前的確認，用自製對話框（appConfirm，見 app.js）。沒有未儲存的修改就直接過
+  window.glossaryConfirmLeave = () => (isDirty()
+    ? appConfirm(t("confirm_gl_discard"), { ok: t("modal_discard"), cancel: t("modal_keep") })
+    : Promise.resolve(true));
+  // Alt+F4、工作列關閉視窗：Python 的關閉事件先取消這次關閉，再呼叫這裡；使用者確定放棄才真的關（window_close）
+  window.askLeaveThenClose = async () => {
+    if (!(await window.glossaryConfirmLeave())) return;
+    try { saveProgress(); } catch (_) {}
+    setTimeout(() => window.pywebview?.api?.window_close?.(), 120); // 讓進度的請求有時間送出
+  };  // 關閉分頁、重新整理、瀏覽器模式關視窗：交給瀏覽器的離開確認（文字由瀏覽器決定）
+  addEventListener("beforeunload", (e) => { if (isDirty()) { e.preventDefault(); e.returnValue = ""; } });
 })();

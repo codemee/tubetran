@@ -161,6 +161,11 @@
         <!-- 全螢幕時最上排的工具列（YouTube 音量圖示左邊）：書籤鈕（快捷鍵 Alt+B，這支影片有書籤才出現；點開在播放區裡列出書籤，
              選一個跳到對應的字幕）、字幕模式鈕（快捷鍵 Alt+C，點一下依序切換 雙語 → 原文 → 譯文 → 無）；只在全螢幕出現 -->
         <div id="fs-tools">
+          <!-- 自訂字幕位置（開／關）：關閉時字幕自動跟著 YouTube 控制列（控制列出現在進度條上方、收起貼近下緣）；
+               開啟時用 Alt+↑／↓ 手動調整。圖示：兩條橫線代表字幕，右邊上下箭頭代表可以上下調 -->
+          <button id="sp" type="button" aria-pressed="false" title="自訂字幕位置" aria-label="自訂字幕位置" data-i18n-attr="title:sp_tip;aria-label:sp_label">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h10M3 15h10"/><path d="M18.5 4v16M16 6.5L18.5 4 21 6.5M16 17.5L18.5 20 21 17.5"/></svg>
+          </button>
           <button id="sbm" type="button" hidden aria-expanded="false" aria-controls="fs-bm" title="書籤 (Alt+B)" aria-label="書籤" data-i18n-attr="title:sbm_hint;aria-label:bm">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/></svg>
           </button>
@@ -169,8 +174,8 @@
         <div id="sm-flash" aria-live="polite"></div>
         <div id="fs-bm" hidden></div>
         <button id="fs" type="button" title="全螢幕 (F)" aria-label="全螢幕" data-i18n-attr="title:fs;aria-label:fs">
-          <!-- 全螢幕：四個角的線條圖示（單色，和 YouTube 播放器的按鈕風格一致） -->
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>
+          <!-- 全螢幕：左上與右下兩個對角箭頭的線條圖示（單色，和 YouTube 播放器的按鈕風格一致） -->
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M4 4l6 6M20 15v5h-5M20 20l-6-6"/></svg>
         </button>
       </div>
 
@@ -207,6 +212,11 @@
           <!-- 不顯示字幕：練聽力用（YouTube 原字幕一律隱藏，我們的字幕也不顯示） -->
           <label data-i18n-attr="title:mode_none_tip"><input type="radio" name="mode" value="none"><span data-i18n="mode_none">無</span></label>
         </div>
+        <!-- 自訂字幕位置（開／關）：關閉時字幕自動跟著 YouTube 控制列（出現在進度條上方、收起貼近下緣）；開啟時用 Alt+↑／↓ 手動調整。
+             全螢幕時看不到這排工具列，所以全螢幕最上排的 #sp 是同一個開關（狀態同步）。圖示：兩條橫線代表字幕，右邊上下箭頭代表可以上下調 -->
+        <button id="sp-bar" class="btn icon tb" type="button" aria-pressed="false" title="自訂字幕位置" aria-label="自訂字幕位置" data-i18n-attr="title:sp_tip;aria-label:sp_label">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h10M3 15h10"/><path d="M18.5 4v16M16 6.5L18.5 4 21 6.5M16 17.5L18.5 20 21 17.5"/></svg>
+        </button>
         <!-- 以下都是圖示按鈕：名稱與說明放在 tooltip（title）與 aria-label，不顯示文字 -->
         <button id="slide-toggle" class="btn icon tb" type="button" aria-pressed="false" title="投影片模式" aria-label="投影片模式"
                 data-i18n-attr="title:slide_mode_tip;aria-label:slide_mode">
@@ -223,12 +233,6 @@
                 title="搜尋字幕" aria-label="搜尋字幕" data-i18n-attr="title:search_tip;aria-label:search">
           <!-- 放大鏡 -->
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
-        </button>
-        <!-- 術語表：翻譯完成的影片才出現；按下展開編輯面板（修改、新增術語，並可用它重新翻譯） -->
-        <button id="gl-toggle" class="btn icon tb" type="button" hidden aria-pressed="false" aria-expanded="false" aria-controls="gl-panel"
-                title="術語表" aria-label="術語表" data-i18n-attr="title:gl_tip;aria-label:gl">
-          <!-- 字典：書頁加上兩條文字線 -->
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3M9 8h6M9 12h4"/></svg>
         </button>
         <!-- 書籤：這支影片有書籤時才出現；按下展開書籤清單，點一個書籤跳到對應的字幕 -->
         <div id="bm-wrap" hidden>
@@ -271,32 +275,42 @@
             <label data-i18n-attr="title:search_seek_tip"><input id="search-seek" type="checkbox"><span data-i18n="search_seek">影片也跳過去</span></label>
           </div>
         </div>
-        <!-- 術語表面板：按字典圖示展開，佔工具列一整行。列由 glossary.js 產生 -->
-        <div id="gl-panel" role="group" aria-label="術語表" hidden data-i18n-attr="aria-label:gl">
-          <p id="gl-hint" class="gl-hint" data-i18n="gl_hint"></p>
-          <!-- 搜尋：同時比對原文與譯法（不分大小寫），只隱藏不符合的列，不影響儲存的內容 -->
-          <div class="gl-search">
-            <input id="gl-q" type="search" autocomplete="off" spellcheck="false" placeholder="搜尋術語"
-                   aria-label="搜尋術語" data-i18n-attr="placeholder:gl_find;aria-label:gl_find">
-            <span id="gl-count" aria-live="polite"></span>
-          </div>
-          <div id="gl-rows"></div>
-          <div class="gl-actions">
-            <button id="gl-add" class="btn" type="button" data-i18n="gl_add">新增術語</button>
-            <span id="gl-state"></span>
-            <span id="gl-msg" role="status" aria-live="polite"></span>
-            <button id="gl-reset" class="btn" type="button" data-i18n="gl_reset" data-i18n-attr="title:gl_reset_tip">重設為自動整理</button>
-            <button id="gl-save" class="btn" type="button" data-i18n="gl_save" data-i18n-attr="title:gl_save_tip">儲存</button>
-            <button id="gl-retrans" class="btn primary" type="button" data-i18n="gl_retrans" data-i18n-attr="title:gl_retrans_tip">儲存並重新翻譯</button>
-          </div>
-        </div>
       </div>
 
       <details id="transcript" class="card" hidden>
-        <summary><span id="transcript-title"></span></summary>
+        <summary>
+          <span id="transcript-title"></span>
+          <!-- 術語表：翻譯完成的影片才出現，放在字幕清單這一列的右端；按下展開編輯面板（修改、新增術語，並可用它重新翻譯）。
+               面板（#gl-panel）緊貼在這張卡片下面；展開字幕清單時面板自動收合（glossary.js） -->
+          <button id="gl-toggle" class="btn icon tb" type="button" hidden aria-pressed="false" aria-expanded="false" aria-controls="gl-panel"
+                  title="術語表" aria-label="術語表" data-i18n-attr="title:gl_tip;aria-label:gl">
+            <!-- 字典：書頁加上兩條文字線 -->
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3M9 8h6M9 12h4"/></svg>
+          </button>
+        </summary>
         <div id="list"></div>
         <button id="follow" type="button" hidden data-i18n="follow_now">回到目前字幕</button>
       </details>
+
+      <!-- 術語表面板：按字幕清單那一列右端的字典圖示展開，緊貼在字幕清單卡片下方（展開字幕清單時自動收合）。列由 glossary.js 產生 -->
+      <div id="gl-panel" role="group" aria-label="術語表" hidden data-i18n-attr="aria-label:gl">
+        <p id="gl-hint" class="gl-hint" data-i18n="gl_hint"></p>
+        <!-- 搜尋：同時比對原文與譯法（不分大小寫），只隱藏不符合的列，不影響儲存的內容 -->
+        <div class="gl-search">
+          <input id="gl-q" type="search" autocomplete="off" spellcheck="false" placeholder="搜尋術語"
+                 aria-label="搜尋術語" data-i18n-attr="placeholder:gl_find;aria-label:gl_find">
+          <span id="gl-count" aria-live="polite"></span>
+        </div>
+        <div id="gl-rows"></div>
+        <div class="gl-actions">
+          <button id="gl-add" class="btn" type="button" data-i18n="gl_add">新增術語</button>
+          <span id="gl-state"></span>
+          <span id="gl-msg" role="status" aria-live="polite"></span>
+          <button id="gl-reset" class="btn" type="button" data-i18n="gl_reset" data-i18n-attr="title:gl_reset_tip">重設為自動整理</button>
+          <button id="gl-save" class="btn" type="button" data-i18n="gl_save" data-i18n-attr="title:gl_save_tip">儲存</button>
+          <button id="gl-retrans" class="btn primary" type="button" data-i18n="gl_retrans" data-i18n-attr="title:gl_retrans_tip">儲存並重新翻譯</button>
+        </div>
+      </div>
     </section>
 
     <aside class="col-side" aria-label="已翻譯的影片" data-i18n-attr="aria-label:side_title">
@@ -336,6 +350,16 @@
       <datalist id="tag-suggest"></datalist>
     </aside>
   </main>
+  </div>
+  <!-- 自製確認對話框（由 appConfirm 顯示）：樣式沿用 .card／.btn，跟著主題；取代系統與瀏覽器內建的 confirm 外觀 -->
+  <div id="modal" hidden>
+    <div id="modal-box" class="card" role="alertdialog" aria-modal="true" aria-labelledby="modal-msg">
+      <p id="modal-msg"></p>
+      <div id="modal-actions">
+        <button id="modal-cancel" class="btn" type="button"></button>
+        <button id="modal-ok" class="btn primary" type="button"></button>
+      </div>
+    </div>
   </div>
   <script src="/static/i18n.js"></script>
   <script src="/static/fsbutton.js"></script>

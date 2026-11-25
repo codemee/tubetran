@@ -1,5 +1,6 @@
 """字幕高低位置（static/subpos.js）：播放時 Alt+↑ / Alt+↓ 調整，視窗與全螢幕各記一個位置。純函式，用 Node 直接執行測試。"""
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -166,3 +167,55 @@ def test_page_wires_subtitle_position_per_screen_mode_and_persists_it():
     assert "subtitle_key" in js and 'tagName !== "IFRAME"' in js
     # 調字幕位置不能動到音量；setVolume 只有全螢幕的播放器快捷鍵（↑ ↓ 調音量，doPlayerKey）會用到
     assert js.count("setVolume") == 1 and js.index("setVolume") > js.index("function doPlayerKey")
+
+
+def test_custom_subtitle_position_is_an_option_button_in_the_player_top_row():
+    """自訂字幕位置是選項：全螢幕最上排最左邊的「字幕位置」鈕（預設關）。關閉時字幕自動跟著 YouTube 控制列，
+    開啟時才套用手動位置、Alt+↑／↓ 才有作用。"""
+    html = (config.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    css = (config.STATIC_DIR / "style.css").read_text(encoding="utf-8")
+    assert re.search(r'<div id="fs-tools">.*?<button id="sp"[^>]*aria-pressed="false".*?<button id="sbm"', html, re.S)  # 在書籤、字幕模式鈕的左邊
+    assert re.search(r'id="sp".*?<svg[^>]*>\s*<path d="M3 9h10M3 15h10"/>', html, re.S)                                # 兩條橫線代表字幕，右邊是上下箭頭
+    assert "customSubPos ? subPos[subMode()] : null" in js                      # 沒開就不套用 --sub-bottom
+    assert "if (!customSubPos) return;" in js and "!customSubPos || busy" in js  # Alt+↑／↓（網頁與桌面版輪詢）沒開就不作用
+    assert 'localStorage.setItem(SUBPOS_ON_KEY' in js and 'getItem(SUBPOS_ON_KEY) === "1"' in js  # 預設關，開關記在這台電腦上
+    assert "CUSTOM_SUBPOS_ENABLED" not in js
+    assert "#sp[aria-pressed=\"true\"]" in css                                  # 開啟中要看得出來
+    i18n = (config.STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
+    for key in ("sp_tip", "sp_label", "sp_on", "sp_off"):
+        assert i18n.count(f"{key}:") == 2                                       # 中文、英文各一
+
+
+def test_player_top_row_shifts_right_in_slide_mode_where_youtube_has_no_controls():
+    """投影片模式沒有 YouTube 的音量／CC／設定，全螢幕最上排的鈕往右靠，補到設定按鈕原本的位置。"""
+    css = (config.STATIC_DIR / "style.css").read_text(encoding="utf-8")
+    assert re.search(r"#stage\.slides #fs-tools\s*\{\s*right:\s*36px", css)
+
+
+def test_subpos_option_also_sits_in_the_toolbar_right_after_the_subtitle_modes():
+    """字幕位置選項在下方工具列「無」的右邊（原本術語表鈕的位置），和全螢幕最上排的 #sp 是同一個開關、狀態同步。"""
+    html = (config.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    css = (config.STATIC_DIR / "style.css").read_text(encoding="utf-8")
+    assert html.index('name="mode" value="none"') < html.index('id="sp-bar"') < html.index('id="slide-toggle"')
+    assert re.search(r'id="sp-bar"[^>]*aria-pressed="false"', html)
+    assert 'for (const id of ["sp", "sp-bar"])' in js and js.count('for (const id of ["sp", "sp-bar"])') == 2   # 畫狀態與接點擊都兩顆一起
+    assert '#sp-bar[aria-pressed="true"]' in css
+
+
+def test_glossary_button_sits_at_the_right_end_of_the_transcript_row_and_panel_opens_below():
+    """術語表鈕在字幕清單那一列的右端（放在 summary 裡，收合時也看得到）；面板在字幕清單卡片的下面，展開字幕清單時自動收合。
+    投影片、搜尋、書籤（跳到特定字幕的工具）在工具列連在一起。"""
+    html = (config.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    css = (config.STATIC_DIR / "style.css").read_text(encoding="utf-8")
+    js = (config.STATIC_DIR / "glossary.js").read_text(encoding="utf-8")
+    assert re.search(r'<summary>\s*<span id="transcript-title"></span>.*?<button id="gl-toggle"[^>]*>.*?</button>\s*</summary>', html, re.S)
+    order = [html.index(f'id="{i}"') for i in ("slide-toggle", "search-toggle", "bm-toggle")]
+    assert order == sorted(order)
+    assert html.index('id="slide-toggle"') < html.index('id="transcript"') < html.index('id="gl-toggle"')   # 術語表鈕已不在工具列
+    assert html.index("</details>") < html.index('id="gl-panel"') < html.index("</section>")                # 面板在字幕清單卡片的下面
+    assert '$("transcript").addEventListener("toggle"' in js and "$(\"transcript\").open && isOpen()" in js   # 展開字幕清單時收合
+    assert 'if (open) $("transcript").open = false' in js                                                  # 展開術語表時收起字幕清單（互斥）
+    assert "margin: -6px -4px -6px auto" in css and "#transcript summary .btn.tb svg" in css                 # 靠右、不撐高這一列
+    assert '#gl-toggle[aria-pressed="true"]' in css                                                         # 展開時鈕要呈現啟用狀態（主色）

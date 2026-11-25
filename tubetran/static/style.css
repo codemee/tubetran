@@ -243,6 +243,13 @@ body {
 .btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
 .btn.icon { width: 38px; height: 38px; padding: 0; font-size: 18px; } /* 與圖示、網址輸入框同高 */
 
+/* ── 自製確認對話框（appConfirm）：蓋在整個頁面上（含全螢幕的 pseudo-fs，z-index 比它高） ── */
+#modal { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 16px; background: rgba(10, 14, 24, .5); }
+#modal[hidden] { display: none; }
+#modal-box { width: min(440px, 100%); padding: 20px 22px 16px; box-shadow: 0 12px 40px rgba(0, 0, 0, .35); }
+#modal-msg { margin: 0 0 18px; font-size: 15px; line-height: 1.6; white-space: pre-line; color: var(--text); }
+#modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
 /* ── 版面 ── */
 .layout {
   display: grid; grid-template-columns: minmax(0, 1fr) 370px; gap: 20px;
@@ -270,13 +277,20 @@ body {
 #stage.no-video #fs, #stage.no-video #player { visibility: hidden; }
 /* 字幕疊在影片上；不攔截點擊，避免擋住播放器操作 */
 #overlay {
-  /* 底邊離畫面底部：預設視窗化至少 30px，全螢幕約 5%（1080p 約 54px）；
-     播放時按 ↑ ↓ 調整後，app.js 會設定 --sub-bottom（視窗與全螢幕各記一個位置，見 subpos.js） */
-  position: absolute; left: 4%; right: 4%; bottom: var(--sub-bottom, max(30px, 5%)); z-index: 1;
+  /* 底邊離畫面底部：比照 YouTube 自己的字幕，跟著控制列走。
+     控制列收起時貼近播放器下緣（max(14px, 2%)）；控制列出現時（.active，見 app.js）抬到進度條上方（86px）。
+     進度條離播放區底部的高度實測：窗口（播放器 716～1070px 寬）與全螢幕都是 73～76px（細線約 3px 厚、頂端約 76px），
+     控制列收起時整條進度條都消失；86px = 進度條頂端 76px + 約 10px 的間隙（拖曳時的圓點也不會碰到）。
+     播放時按 ↑ ↓ 手動調整後，app.js 會設定 --sub-bottom（視窗與全螢幕各記一個位置，見 subpos.js），那時就固定在手動的位置，不再跟著控制列 */
+  position: absolute; left: 4%; right: 4%; bottom: var(--sub-bottom, max(14px, 2%)); z-index: 1;
+  transition: bottom .25s;
   text-align: center; pointer-events: none;
   font-size: clamp(14px, 2.6cqw, 44px); line-height: 1.4; color: #fff;
   text-shadow: 0 1px 2px #000;
 }
+#stage.active #overlay { bottom: var(--sub-bottom, 86px); }
+/* 投影片模式沒有 YouTube 控制列（.active 一直開著），字幕一律貼近下緣 */
+#stage.slides #overlay { bottom: var(--sub-bottom, max(14px, 2%)); }
 /* 全螢幕時 YouTube 控制列一淡出，瀏覽器會把影片改成硬體疊層直接輸出；只要有東西蓋在影片區上才會退回一般合成。
    21:9 之類的影片，字幕若整個落在上下黑邊（沒碰到影片區）就會被略過而消失。
    所以在整個播放區蓋一層幾乎全透明的遮罩（肉眼看不出來、不攔截點擊），讓影片永遠不被當成疊層 */
@@ -293,16 +307,22 @@ body {
 /* 全螢幕鈕：右下角，放在 YouTube 播放器自己的「YouTube」字樣右邊、中心對齊它。
    YouTube 控制列右下角的字樣位置在任何播放器大小（視窗化 570～1070px、全螢幕 1280／1920）都一樣：
    右緣離播放器右邊 60px、垂直中心離底部 37px（實測）。所以按鈕 28px 高 → bottom: 37 − 14 = 23px；
-   和字樣空 8px → 按鈕左緣離右邊 52px → right: 52 − 28 = 24px。
+   新版 YouTube 的字樣外面有一顆膠囊（右緣離播放器右邊約 28px），按鈕疊在膠囊右端；
+   實際用 Alt+← / → 微調過，離右邊 18px 最順手 → right: 18px（左緣離右邊 46px，和字樣空約 12px）。
    樣式跟 YouTube 的按鈕一致：透明背景、白色線條圖示；加一點陰影，亮的畫面上才看得清楚。 */
 #fs {
-  position: absolute; bottom: 23px; right: 24px; z-index: 2;
+  position: absolute; bottom: 23px; right: 18px; z-index: 2;
   display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
   border: 0; border-radius: 7px; background: transparent; color: #fff;
-  cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .25s, background .15s;
+  cursor: pointer; opacity: 0; transition: opacity .25s, background .15s;
 }
-/* 顯示與否由 app.js 依 YouTube 控制列的行為決定（.active）；隱藏時不接受點擊，免得誤按看不見的鈕 */
-#stage.active #fs, #fs:focus-visible { opacity: 1; pointer-events: auto; }
+/* 顯示與否由 app.js 依 YouTube 控制列的行為決定（.active）。
+   新版 YouTube 右下角的「YouTube」是一顆膠囊（點了到 YouTube 觀看，右緣離播放區右邊約 28px），滑鼠一碰就變亮底；
+   我們的鈕疊在膠囊右端。鈕隱藏時若不接收滑鼠，游標到這裡會落在膠囊上，鈕永遠等不到 :hover 而不出現，點下去也是點到膠囊。
+   所以隱藏時也接收滑鼠：用 ::before 在鈕周圍多留一圈（從播放區右緣往左 56px，涵蓋鈕與膠囊最右端；高 48px），游標一進來鈕就出現。
+   這一圈不含「YouTube」字樣（字樣右緣離播放區右邊約 58～60px），字樣仍是原本的連結，也碰不到進度條（離底部約 73px 以上）。 */
+#fs::before { content: ""; position: absolute; right: -18px; bottom: -10px; width: 56px; height: 48px; }
+#stage.active #fs, #fs:focus-visible { opacity: 1; }
 #fs svg {
   width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .65));
@@ -316,6 +336,9 @@ body {
    不放右下角：那裡 YouTube 暫停或播完時會出現「更多影片」的推薦縮圖，會疊在一起 */
 #fs-tools { display: none; position: absolute; top: 10px; right: 175px; z-index: 2; align-items: center; gap: 20px; pointer-events: none; }
 #stage:fullscreen #fs-tools, #stage.pseudo-fs #fs-tools { display: flex; }
+/* 投影片模式沒有 YouTube 的音量／CC／設定，這一排就往右靠，補到設定按鈕原本的位置（設定圖示右緣離右邊約 36px） */
+#fs-tools { transition: right .25s; }
+#stage.slides #fs-tools { right: 36px; }
 #sm {
   display: block;
   height: 28px; min-width: 44px; padding: 0 10px; border: 0; border-radius: 7px;
@@ -326,15 +349,17 @@ body {
 #stage.active #sm, #sm:focus-visible { opacity: 1; pointer-events: auto; }
 #sm:hover { background: rgba(255, 255, 255, .18); }
 /* 全螢幕的書籤鈕與清單：書籤鈕在字幕模式鈕左邊，清單在這一排的下方；清單開著時不隱藏滑鼠游標 */
-#sbm {
+#sbm, #sp {
   display: grid;
   place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px;
   background: transparent; color: #fff; cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .25s, background .15s;
 }
 #sbm[hidden] { display: none; }
-#stage.active #sbm, #sbm:focus-visible, #stage.bm-open #sbm { opacity: 1; pointer-events: auto; }
-#sbm:hover, #stage.bm-open #sbm { background: rgba(255, 255, 255, .18); }
-#sbm svg {
+#stage.active #sbm, #sbm:focus-visible, #stage.bm-open #sbm,
+#stage.active #sp, #sp:focus-visible { opacity: 1; pointer-events: auto; }
+#sbm:hover, #stage.bm-open #sbm, #sp:hover { background: rgba(255, 255, 255, .18); }
+#sp[aria-pressed="true"] { background: rgba(255, 255, 255, .3); } /* 自訂字幕位置開啟中 */
+#sbm svg, #sp svg {
   width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .65));
 }
@@ -391,7 +416,7 @@ body {
 }
 #slide-prep { display: none; }
 #stage.no-video .slide-nav, #stage.no-video #slide-count, #stage.no-video #slide-prep, #stage.no-video #slide-img { display: none; } /* 刪掉目前的影片後：只留「貼上網址」提示 */
-#slide-toggle[aria-pressed="true"], #search-toggle[aria-pressed="true"], #bm-toggle[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+#slide-toggle[aria-pressed="true"], #search-toggle[aria-pressed="true"], #bm-toggle[aria-pressed="true"], #sp-bar[aria-pressed="true"], #gl-toggle[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 
 /* ── 處理進度（取得字幕／辨識／翻譯） ── */
 #progress { margin-top: 12px; padding: 16px 18px; border-color: var(--primary); }
@@ -461,7 +486,7 @@ body {
    寬度剛好的時候害最後一個按鈕被擠到下一行（回歸） */
 #dl-srt { margin-left: auto; }
 /* 工具列的圖示按鈕：線條圖示（currentColor）；下載鈕下方的格式名稱用實心小字 */
-.toolbar .btn.tb svg {
+.toolbar .btn.tb svg, #transcript summary .btn.tb svg {
   width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round;
 }
@@ -484,6 +509,16 @@ body {
   display: flex; align-items: center; gap: 8px; user-select: none;
 }
 #transcript summary::-webkit-details-marker { display: none; }
+/* 術語表鈕：字幕清單這一列的右端；比一般圖示鈕小一點（30px），列高不變 */
+#transcript summary .btn.icon { width: 30px; height: 30px; margin: -6px -4px -6px auto; flex: none; }
+#transcript summary .btn.icon svg { width: 20px; height: 20px; }
+/* 術語表有未儲存的修改：鈕的右上角一個小圓點（收合了也看得到），面板裡的狀態文字也用強調色 */
+#gl-toggle { position: relative; }
+#gl-toggle[data-dirty="1"]::after {
+  content: ""; position: absolute; top: 2px; right: 2px; width: 9px; height: 9px; border-radius: 50%;
+  background: #f59e0b; border: 2px solid var(--surface);
+}
+#gl-state.dirty { color: #b45309; font-weight: 600; }
 #transcript summary::before {
   content: ""; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
   transform: rotate(-45deg); transition: transform .15s;
@@ -575,7 +610,7 @@ body {
 .search-opts { display: flex; flex-wrap: wrap; gap: 4px 14px; flex-basis: 100%; font-size: 13px; color: var(--muted); }
 .search-opts label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 /* ── 術語表面板：佔工具列一整行 ── */
-#gl-panel { flex-basis: 100%; display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+#gl-panel { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
 #gl-panel[hidden] { display: none; }
 .gl-hint { margin: 0; font-size: 13px; color: var(--muted); }
 #gl-rows { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; padding-right: 2px; }

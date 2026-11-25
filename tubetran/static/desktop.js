@@ -101,7 +101,8 @@
     setupResize();
     $("win-min").addEventListener("click", () => api.window_minimize());
     maxBtn.addEventListener("click", toggleMax);
-    $("win-close").addEventListener("click", () => {
+    $("win-close").addEventListener("click", async () => {
+      if (window.glossaryConfirmLeave && !(await window.glossaryConfirmLeave())) return; // 術語表有未儲存的修改：問過才關閉
       try { saveProgress(); } catch (_) {}      // 先記下播放進度
       setTimeout(() => api.window_close(), 120); // 讓進度的請求有時間送出
     });

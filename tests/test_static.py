@@ -17,9 +17,10 @@ def _rule(css: str, selector: str) -> str:
 def test_fullscreen_button_is_aligned_with_and_right_of_the_youtube_wordmark():
     """YouTube 控制列右下角的「YouTube」字樣，在任何播放器大小下位置都一樣（用真實播放器實測）：
     右緣離右邊 60px、垂直中心離底部 37px。按鈕 28px：bottom = 37 − 14 = 23px 才會中心對齊；
-    和字樣空 8px → 左緣離右邊 52px → right = 52 − 28 = 24px。不能放右上角（會蓋住 YouTube 的設定按鈕）。"""
+    新版字樣外有一顆膠囊（右緣離右邊約 28px），按鈕疊在膠囊右端；實際微調後離右邊 18px 最順手 → right = 18px。
+    不能放右上角（會蓋住 YouTube 的設定按鈕）。"""
     rule = _rule(_css(), "#fs")
-    assert re.search(r"bottom:\s*23px", rule) and re.search(r"right:\s*24px", rule)
+    assert re.search(r"bottom:\s*23px", rule) and re.search(r"right:\s*18px", rule)
     assert "top:" not in rule
     width, height = re.search(r"width:\s*(\d+)px", rule), re.search(r"height:\s*(\d+)px", rule)
     assert width and height and int(width.group(1)) == int(height.group(1)) == 28
@@ -39,7 +40,11 @@ def test_fullscreen_button_matches_youtubes_transparent_white_line_style():
 
 def test_subtitles_sit_low():
     rule = _rule(_css(), "#overlay")
-    assert re.search(r"bottom:\s*var\(--sub-bottom,\s*max\(30px,\s*5%\)\)", rule)  # 預設：視窗化至少 30px，全螢幕約 5%；調整後用 --sub-bottom
+    css = _css()
+    assert re.search(r"bottom:\s*var\(--sub-bottom,\s*max\(14px,\s*2%\)\)", rule)             # 控制列收起：貼近下緣；手動調整後用 --sub-bottom
+    assert re.search(r"#stage\.active #overlay\s*\{\s*bottom:\s*var\(--sub-bottom,\s*86px\)", css)  # 控制列出現：抬到進度條上方（進度條頂端實測約 76px）
+    assert re.search(r"#stage\.slides #overlay\s*\{\s*bottom:\s*var\(--sub-bottom,\s*max\(14px,\s*2%\)\)", css)  # 投影片模式沒有控制列
+    assert css.index("#stage.active #overlay") < css.index("#stage.slides #overlay")          # 同樣的權重，投影片的規則要在後面才會蓋過去
 
 
 def test_transcript_follows_playback_and_can_return_to_current_line():
@@ -221,3 +226,15 @@ def test_switching_videos_leaves_slide_mode():
     reset = reset[:reset.index("\n}\n")]
     assert "slideMode = false" in reset and 'classList.remove("slides")' in reset
     assert "player = null" in reset  # 沒有控制列、靜音的播放器拆掉，下一支影片重新建立正常的播放器
+
+def test_all_confirmations_use_the_custom_dialog_not_the_builtin_confirm():
+    """所有確認（刪除、重新處理、重新翻譯、重設術語表、刪除投影片、放棄未儲存的修改）都用自製對話框 appConfirm，
+    外觀才會跟應用程式一致；不能再有內建的 confirm()。"""
+    import re
+
+    for name in ("app.js", "glossary.js", "settings.js", "desktop.js", "search.js"):
+        js = (config.STATIC_DIR / name).read_text(encoding="utf-8")
+        assert not re.search(r"(?<![A-Za-z.])confirm\(", js), f"{name} 還在用內建的 confirm()"
+    i18n = (config.STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
+    for key in ("modal_ok", "modal_cancel", "modal_delete", "modal_redo", "modal_retrans", "modal_reset", "modal_cancel_job", "modal_keep_job", "modal_discard", "modal_keep"):
+        assert i18n.count(f"{key}:") == 2, key                                  # 中文、英文各一

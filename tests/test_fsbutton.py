@@ -1,5 +1,6 @@
 """全螢幕鈕何時顯示（static/fsbutton.js）：跟著 YouTube 控制列。邏輯是純函式，用 Node 直接執行測試。"""
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -247,7 +248,11 @@ def test_page_wires_the_wordmark_detection_and_avoids_its_own_subtitles():
     assert html.index("fsbutton.js") < html.index("app.js")                 # 邏輯要先載入
     css = (config.STATIC_DIR / "style.css").read_text(encoding="utf-8")
     assert "#stage:hover #fs" not in css                                    # 不再靠 :hover（滑鼠一離開就立刻消失）
-    assert "#stage.active #fs" in css and "pointer-events: none" in css     # 隱藏時不接受點擊
+    assert "#stage.active #fs" in css
+    # 隱藏時也要接收滑鼠（否則游標落在 YouTube 膠囊上，鈕不會出現、點了是點到膠囊），但範圍只到「YouTube」字樣的右邊，不吃掉字樣的連結
+    assert not re.search(r"#fs\s*\{[^}]*pointer-events:\s*none", css)
+    m = re.search(r"#fs::before\s*\{[^}]*width:\s*(\d+)px", css)
+    assert m and int(m.group(1)) <= 58                                      # 字樣右緣離播放區右邊約 58～60px
     js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
     assert "fsShouldShow" in js and "cursor_pos" in js and "logo_fraction" in js
     assert "subtitleCoversLogo" in js                                       # 我們的字幕蓋住那塊區域時，不能用偵測結果

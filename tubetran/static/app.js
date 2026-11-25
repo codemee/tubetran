@@ -443,9 +443,10 @@ paintMode();
 function cycleMode() { if (segs.length) { setMode(nextCaptionMode(mode)); flashMode(); } }
 // 切換時在畫面上短暫顯示目前模式（「無」尤其需要，否則會以為字幕壞了）
 let flashTimer = 0;
-function flashMode() {
+function flashMode() { flashText(t("sm_flash", { mode: t("mode_" + mode) })); }
+function flashText(text) {
   const f = $("sm-flash");
-  f.textContent = t("sm_flash", { mode: t("mode_" + mode) });
+  f.textContent = text;
   f.classList.add("on");
   clearTimeout(flashTimer);
   flashTimer = setTimeout(() => f.classList.remove("on"), 1200);
@@ -679,6 +680,44 @@ function setPseudoFs(on) {
   try { window.pywebview?.api?.set_fullscreen(on); } catch (_) {}
   document.dispatchEvent(new Event("fullscreenchange"));
 }
+// ── 自製確認對話框：樣式跟著應用程式（取代系統與瀏覽器內建的 confirm）──
+// 回傳 Promise<boolean>（按「確定」的那顆是 true；Esc、點背景、按另一顆都是 false）。預設焦點在取消，免得手滑按 Enter 就放棄了東西。
+// 對話框開著時，頁面其他快捷鍵（F、空白鍵…）不作用；同時只會有一個，重複要求共用同一個結果。
+let modalPromise = null;
+function appConfirm(message, { ok, cancel } = {}) {
+  if (modalPromise) return modalPromise;
+  modalPromise = (async () => {
+    // 全螢幕時只看得到播放區，對話框在它外面：先退出全螢幕
+    try { if (document.fullscreenElement) await document.exitFullscreen(); } catch (_) {}
+    if (pseudoFs) setPseudoFs(false);
+    return new Promise((resolve) => {
+      const m = $("modal"), okB = $("modal-ok"), noB = $("modal-cancel"), prev = document.activeElement;
+      $("modal-msg").textContent = message;
+      okB.textContent = ok || t("modal_ok");
+      noB.textContent = cancel || t("modal_cancel");
+      m.hidden = false;
+      noB.focus();
+      const onKey = (e) => {
+        e.stopImmediatePropagation();
+        if (e.key === "Escape") { e.preventDefault(); done(false); }
+        else if (e.key === "Tab") { e.preventDefault(); (document.activeElement === noB ? okB : noB).focus(); }
+      };
+      const done = (v) => {
+        m.hidden = true;
+        removeEventListener("keydown", onKey, true);
+        okB.onclick = noB.onclick = m.onclick = null;
+        try { prev?.focus?.(); } catch (_) {}
+        modalPromise = null;
+        resolve(v);
+      };
+      addEventListener("keydown", onKey, true);
+      okB.onclick = () => done(true);
+      noB.onclick = () => done(false);
+      m.onclick = (e) => { if (e.target === m) done(false); };
+    });
+  })();
+  return modalPromise;
+}
 // 桌面版在使用者用系統方式退出視窗全螢幕時呼叫（視窗已經退出了，只需收回播放區的鋪滿樣式）
 window.__tubetranExitFs = () => {
   if (!pseudoFs) return;
@@ -700,7 +739,7 @@ function toggleFullscreen() {
 // 視窗模式：把焦點交還給播放器（YouTube 的快捷鍵有效）。投影片模式不交給播放器（← → 是我們自己的上一則／下一則），只讓鈕失去焦點。
 // 全螢幕：焦點留在頁面上（不是 iframe），由下面的 playerKeyAction 處理播放器快捷鍵（原因見 fsbutton.js）。
 function focusPlayer() {
-  const btn = [$("fs"), $("sm"), $("sbm")].find((b) => b === document.activeElement);
+  const btn = [$("fs"), $("sm"), $("sbm"), $("sp")].find((b) => b === document.activeElement);
   if (!btn) return; // 使用者已經點了別的地方，不要搶焦點
   const frame = !slideMode && !inFullscreen() && player?.getIframe?.();
   if (!frame) { btn.blur(); return; }
@@ -746,8 +785,13 @@ const SUBPOS_KEY = "tubetran.subPos";
 let subPos = { win: null, fs: null };
 try { subPos = SubPos.parseStored(localStorage.getItem(SUBPOS_KEY)); } catch (_) {}
 const subMode = () => (document.fullscreenElement || pseudoFs ? "fs" : "win");
+// 自訂字幕位置是選項（全螢幕最上排的「字幕位置」鈕，預設關）：關閉時字幕自動跟著 YouTube 控制列走（控制列出現時在進度條上方、收起時貼近下緣，見 style.css 的 #overlay）；
+// 開啟時才套用手動調整的位置，Alt+↑／↓ 才有作用。關閉時已記下的位置保留，下次開啟還在。
+const SUBPOS_ON_KEY = "tubetran.subPosOn";
+let customSubPos = false;
+try { customSubPos = localStorage.getItem(SUBPOS_ON_KEY) === "1"; } catch (_) {}
 function applySubPos() {
-  const v = subPos[subMode()];
+  const v = customSubPos ? subPos[subMode()] : null;
   if (v == null) $("stage").style.removeProperty("--sub-bottom"); else $("stage").style.setProperty("--sub-bottom", `${v}px`);
 }
 function moveSub(dir) {
@@ -758,8 +802,18 @@ function moveSub(dir) {
   try { localStorage.setItem(SUBPOS_KEY, JSON.stringify(subPos)); } catch (_) {}
 }
 applySubPos();
+function paintSubPosBtn() { for (const id of ["sp", "sp-bar"]) $(id).setAttribute("aria-pressed", String(customSubPos)); } // 工具列與全螢幕最上排是同一個開關
+paintSubPosBtn();
+for (const id of ["sp", "sp-bar"]) $(id).addEventListener("click", () => {
+  customSubPos = !customSubPos;
+  try { localStorage.setItem(SUBPOS_ON_KEY, customSubPos ? "1" : "0"); } catch (_) {}
+  applySubPos(); paintSubPosBtn();
+  flashText(t(customSubPos ? "sp_on" : "sp_off"));
+  setTimeout(focusPlayer, 0);
+});
 document.addEventListener("fullscreenchange", applySubPos); // 進出全螢幕：換成另一個畫面記的位置
 document.addEventListener("keydown", (e) => {
+  if (!customSubPos) return;                 // 選項沒開：不攔截，Alt+↑／↓ 不作用
   const dir = SubPos.subKey(e, document.activeElement);
   if (!dir || !segs.length) return; // 還沒有字幕：不攔截，照常捲動頁面
   e.preventDefault();               // 不要讓瀏覽器再做它自己的事
@@ -803,7 +857,7 @@ pollIframeKey("bookmark_key_down", () => toggleBookmarkMenu());
   const rep = { dir: 0, since: 0, last: 0 };
   let busy = false;
   setInterval(async () => {
-    if (busy || document.activeElement?.tagName !== "IFRAME" || typeof window.pywebview?.api?.subtitle_key !== "function") { rep.dir = 0; return; }
+    if (!customSubPos || busy || document.activeElement?.tagName !== "IFRAME" || typeof window.pywebview?.api?.subtitle_key !== "function") { rep.dir = 0; return; }
     busy = true;
     try {
       const dir = segs.length ? await window.pywebview.api.subtitle_key() : 0;
@@ -868,7 +922,7 @@ pollIframeKey("bookmark_key_down", () => toggleBookmarkMenu());
     if (inside && !st.inside) st.lastActivity = now;
     if (!inside && st.inside) st.leftAt = now;
     st.inside = inside;
-    st.overButton = fsBtn.matches(":hover") || $("sm").matches(":hover") || $("sbm").matches(":hover");
+    st.overButton = fsBtn.matches(":hover") || $("sm").matches(":hover") || $("sbm").matches(":hover") || $("sp").matches(":hover");
     const hasVideo = $("empty").hidden;                         // 已經有影片（沒有影片時舞台上只有「貼上網址」的提示）
     if (inside && typeof api()?.cursor_pos === "function") pollCursor(); else lastCursor = null;
     // 桌面版：看 YouTube 字樣在不在
@@ -1019,7 +1073,7 @@ $("slide-delete").addEventListener("click", async () => {
   if (!id) return;
   const v = library.find((x) => x.video_id === id);
   const mb = slides.bytes ? Math.max(1, Math.round(slides.bytes / 1e6)) : "?";
-  if (!confirm(t("confirm_slide_delete", { name: v ? (v.title_trans || v.title) : id, mb }))) return;
+  if (!(await appConfirm(t("confirm_slide_delete", { name: v ? (v.title_trans || v.title) : id, mb }), { ok: t("modal_delete") }))) return;
   clearTimeout(slidePoll);
   const res = await fetch(`/api/slides/${id}`, { method: "DELETE" });
   if (!res.ok) { const detail = (await res.json()).detail; setStatus(() => serverMsg(detail), true); return; }
@@ -1283,6 +1337,7 @@ function openLastVideo() {
 }
 
 async function openUrl(url, opts = {}) {
+  if (window.glossaryConfirmLeave && !(await window.glossaryConfirmLeave())) return; // 術語表有未儲存的修改：問過才切換
   saveProgress(); // 切換前先記下目前這支的進度（此時 segs／videoId 仍是舊影片）
   const my = ++runId;
   resetView();
@@ -1589,7 +1644,7 @@ const REDO_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 async function reprocessVideo(id) {
   const v = library.find((x) => x.video_id === id);
   const name = v ? (v.title_trans || v.title) : id;
-  if (!confirm(t("confirm_redo", { name }))) return;
+  if (!(await appConfirm(t("confirm_redo", { name }), { ok: t("modal_redo") }))) return;
   try {
     const res = await fetch(`/api/library/${id}/reprocess`, { method: "POST" });
     if (!res.ok) throw new Error((await res.json()).detail);
@@ -1651,7 +1706,9 @@ function paintResume(v) {
 async function deleteVideo(id) {
   const v = library.find((x) => x.video_id === id);
   const name = v ? (v.title_trans || v.title) : id;
-  if (!confirm(t(v?.status === "running" ? "confirm_cancel" : "confirm_delete", { name }))) return;
+  const running = v?.status === "running";
+  if (!(await appConfirm(t(running ? "confirm_cancel" : "confirm_delete", { name }),
+    running ? { ok: t("modal_cancel_job"), cancel: t("modal_keep_job") } : { ok: t("modal_delete") }))) return;
   const res = await fetch(`/api/library/${id}`, { method: "DELETE" });
   if (!res.ok) {
     const detail = (await res.json()).detail;

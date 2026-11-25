@@ -363,7 +363,7 @@ def test_narrow_layout_keeps_the_url_row_aligned_with_the_content_area():
 def test_js_api_does_not_expose_internal_state():
     """pywebview 會把 js_api 的公開屬性都暴露給網頁，內部狀態必須是底線開頭。"""
     public = {n for n in dir(cli._DesktopApi(True)) if not n.startswith("_")}
-    assert public == {"open_external", "save_download", "set_fullscreen", "cursor_pos", "logo_fraction", "fullscreen_key_down", "caption_key_down", "bookmark_key_down", "subtitle_key", "window_state", "window_minimize", "window_toggle_maximize",
+    assert public == {"open_external", "save_download", "set_fullscreen", "cursor_pos", "logo_fraction", "fullscreen_key_down", "caption_key_down", "bookmark_key_down", "subtitle_key", "set_unsaved", "window_state", "window_minimize", "window_toggle_maximize",
                       "window_move_begin", "window_move_to", "window_move_end", "window_close", "resize_begin", "resize_to", "resize_end",
                       "set_window_title"}
 
@@ -384,3 +384,127 @@ def test_set_window_title_syncs_window_and_rejects_bad_input():
     assert api._window.title is None
     assert api.set_window_title("水管譯工") is True
     assert api._window.title == "水管譯工" and api._title == "水管譯工"
+
+# ── 關閉視窗前的確認（術語表有未儲存的修改）──
+class _CloseWindow:
+    """假的視窗：記錄被問了什麼；evaluate_js 可設定回傳值或丟錯。"""
+
+    def __init__(self, js=True, dialog=True, js_boom=False, dialog_boom=False):
+        self.js, self.dialog, self.js_boom, self.dialog_boom = js, dialog, js_boom, dialog_boom
+        self.scripts, self.asked, self.destroyed, self.restored = [], [], False, False
+
+    def evaluate_js(self, script):
+        self.scripts.append(script)
+        if self.js_boom:
+            raise RuntimeError("js failed")
+        return self.js
+
+    def create_confirmation_dialog(self, title, message):
+        self.asked.append((title, message))
+        if self.dialog_boom:
+            raise RuntimeError("dialog failed")
+        return self.dialog
+
+    def restore(self):
+        self.restored = True
+
+    def destroy(self):
+        self.destroyed = True
+
+
+class _SyncThread:
+    """測試用：Thread 改成立刻在當前執行緒執行，並記錄有沒有被啟動。"""
+    started = 0
+
+    def __init__(self, target=None, **kw):
+        self.target = target
+
+    def start(self):
+        type(self).started += 1
+        self.target()
+
+
+def _api(monkeypatch, window, platform="win32"):
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(cli.threading, "Thread", _SyncThread)
+    _SyncThread.started = 0
+    a = cli._DesktopApi(True)
+    a._window = window
+    monkeypatch.setattr(a, "_hwnd", lambda: 0)
+    return a
+
+
+def test_closing_without_unsaved_changes_just_closes(monkeypatch):
+    a = _api(monkeypatch, _CloseWindow())
+    assert a._on_closing() is None and _SyncThread.started == 0 and a._window.scripts == []
+
+
+def test_closing_with_unsaved_changes_cancels_and_asks_the_page(monkeypatch):
+    """Alt+F4、工作列關閉不經過網頁的關閉鈕：先取消這次關閉（回傳 False），再請網頁用自製對話框問；確定後網頁自己呼叫 window_close。"""
+    a = _api(monkeypatch, _CloseWindow(js=True))
+    assert a.set_unsaved("  有未儲存的修改  ") is True and a._unsaved == "有未儲存的修改"
+    assert a._on_closing() is False                                    # 取消這次關閉
+    assert _SyncThread.started == 1 and "askLeaveThenClose" in a._window.scripts[0]
+    assert a._window.asked == [] and not a._window.destroyed           # 網頁問得了：不彈系統框、也還沒關
+    assert a._asking is False                                          # 問完（對話框交給網頁了）旗標放掉
+    a.set_unsaved("")
+    assert a._on_closing() is None                                     # 已儲存或改回原樣：直接關
+
+
+def test_closing_does_not_start_a_second_question_while_one_is_pending(monkeypatch):
+    a = _api(monkeypatch, _CloseWindow())
+    a.set_unsaved("x")
+    a._asking = True
+    assert a._on_closing() is False and _SyncThread.started == 0
+
+
+def test_minimized_window_is_restored_before_asking(monkeypatch):
+    """從工作列關閉最小化的視窗：先還原，使用者才看得到網頁的對話框。"""
+    a = _api(monkeypatch, _CloseWindow())
+    monkeypatch.setattr(a, "_hwnd", lambda: 123)
+    monkeypatch.setattr(cli.winctl, "is_iconic", lambda h: True)
+    a.set_unsaved("x")
+    a._on_closing()
+    assert a._window.restored
+    a2 = _api(monkeypatch, _CloseWindow())
+    monkeypatch.setattr(a2, "_hwnd", lambda: 123)
+    monkeypatch.setattr(cli.winctl, "is_iconic", lambda h: False)
+    a2.set_unsaved("x")
+    a2._on_closing()
+    assert not a2._window.restored                                     # 沒最小化就不要動（最大化的視窗不能被還原掉）
+
+
+def test_page_that_cannot_ask_falls_back_to_the_system_dialog_and_never_blocks_closing(monkeypatch):
+    a = _api(monkeypatch, _CloseWindow(js_boom=True, dialog=False))
+    a.set_unsaved("x")
+    assert a._on_closing() is False
+    assert a._window.asked == [(a._title, "x")] and not a._window.destroyed   # 網頁問不了 → 系統框；按取消就不關
+    b = _api(monkeypatch, _CloseWindow(js=False, dialog=True))                 # 網頁回報沒有處理函式
+    b.set_unsaved("x")
+    b._on_closing()
+    assert b._window.destroyed                                                 # 系統框按確定 → 關閉
+    c = _api(monkeypatch, _CloseWindow(js_boom=True, dialog_boom=True))
+    c.set_unsaved("x")
+    c._on_closing()
+    assert c._window.destroyed                                                 # 連系統框都出錯：放行，程式不能關不掉
+
+
+def test_other_platforms_are_not_intercepted(monkeypatch):
+    a = _api(monkeypatch, _CloseWindow(), platform="linux")
+    a.set_unsaved("x")
+    assert a._on_closing() is None and _SyncThread.started == 0
+
+
+def test_window_close_button_already_confirmed_so_closing_event_does_not_ask_again(monkeypatch):
+    a = _api(monkeypatch, _CloseWindow())
+    a.set_unsaved("x")
+    a.window_close()                                                   # 網頁已經確認過了
+    assert a._window.destroyed and a._on_closing() is None and _SyncThread.started == 0
+
+
+def test_set_unsaved_limits_message_length():
+    a = cli._DesktopApi(True)
+    a.set_unsaved("字" * 1000)
+    assert len(a._unsaved) == 300
+    a.set_unsaved(None)
+    assert a._unsaved == ""

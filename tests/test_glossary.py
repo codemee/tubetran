@@ -196,3 +196,25 @@ def test_export_import_carries_the_edited_flag(client, tmp_path, monkeypatch):
     assert jobs.import_bundle(bundle)["imported"] == [VID]
     assert client.get(f"/api/library/{VID}/glossary").json() == {
         "glossary": [{"term": "手動", "trans": "編輯"}], "edited": True}
+
+def test_unsaved_glossary_edits_are_flagged_and_confirmed_before_leaving():
+    """術語表有未儲存的修改時：鈕上有小圓點、面板狀態文字提示；切換影片、桌面版關閉鈕、重新整理／關閉分頁前都要先確認。"""
+    from tubetran import config
+
+    gl = (config.STATIC_DIR / "glossary.js").read_text(encoding="utf-8")
+    app = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    desktop = (config.STATIC_DIR / "desktop.js").read_text(encoding="utf-8")
+    css = (config.STATIC_DIR / "style.css").read_text(encoding="utf-8")
+    i18n = (config.STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
+    assert gl.count("baseline = sig()") == 3                                       # 載入、儲存、重新翻譯／重設後都重設基準
+    assert 'btn.dataset.dirty = dirty ? "1" : "0"' in gl and 'baseline = "[]"' in gl  # 標記跟著狀態；換影片時清掉
+    assert "window.glossaryConfirmLeave" in gl and 'addEventListener("beforeunload"' in gl
+    assert "appConfirm(t(\"confirm_gl_discard\")" in gl and "window.askLeaveThenClose" in gl     # 自製對話框；Alt+F4／工作列關閉由 Python 取消後呼叫它
+    html = (config.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'id="modal"' in html and 'id="modal-ok"' in html and 'id="modal-cancel"' in html
+    assert "function appConfirm" in app and 'confirm(t("confirm_gl_discard")' not in gl                                  # 離開確認不再用內建的 confirm（重新翻譯／重設仍是）
+    assert "glossaryConfirmLeave" in app.split("async function openUrl")[1][:300]   # 切換影片前確認
+    assert "glossaryConfirmLeave" in desktop                                       # 桌面版自製的關閉鈕
+    assert '#gl-toggle[data-dirty="1"]::after' in css
+    for key in ("gl_dirty", "confirm_gl_discard"):
+        assert i18n.count(f"{key}:") == 2                                          # 中英文各一
