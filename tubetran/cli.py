@@ -91,9 +91,6 @@ def selftest() -> int:
     import importlib
 
     out: dict = {}
-    # 和桌面模式啟動時做同樣的事：先清除網路來源標記，再載入 pythonnet。
-    # 這樣在「帶標記的副本」上執行 --selftest，就等於驗證桌面模式在下載來的 ZIP 上能不能啟動。
-    out["unblocked_dlls"] = _unblock_bundled_files()
     for name in ("fastapi", "uvicorn", "yt_dlp", "yt_dlp_ejs", "anthropic", "faster_whisper",
                  "ctranslate2", "av", "onnxruntime", "webview"):
         try:
@@ -114,6 +111,8 @@ def selftest() -> int:
     if sys.platform == "win32":
         # 只 import webview 看不出 .NET 載入有沒有問題：pywebview 要到開視窗時才載入 pythonnet。
         # 這裡實際載入 pythonnet 與 WinForms 組件（桌面模式一開視窗就會做的事）。
+        # 在「帶網路來源標記的副本」上執行 --selftest，就等於驗證下載來的 ZIP 能不能載入 .NET 組件
+        # （能不能載入由 TubeTran.exe 旁邊的 TubeTran.exe.config 決定，見 packaging/TubeTran.exe.config）。
         try:
             import clr  # pythonnet：載入 Python.Runtime.dll
 
@@ -635,29 +634,6 @@ def _enable_per_monitor_dpi(user32=None, shcore=None) -> bool:
         return False
 
 
-def _unblock_bundled_files(root: Path | None = None) -> int:
-    """清除打包版自己資料夾裡 DLL 的「來自網際網路」標記（NTFS 的 Zone.Identifier），回傳清掉幾個。
-
-    從 GitHub 下載 ZIP 再解壓縮時，檔案總管會替每個檔案加上這個標記。.NET Framework 拒絕載入帶標記的組件，
-    pythonnet 載入 Python.Runtime.dll 就失敗（RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize），
-    桌面視窗開不起來。所以在載入 pythonnet 之前先清掉。只在打包版需要；清不掉（唯讀資料夾等）就算了，
-    之後的錯誤會由 _report_desktop_failure 說明解法。"""
-    if os.environ.get("TUBETRAN_NO_UNBLOCK"):
-        return 0  # 測試用：CI 靠它確認「帶標記的副本」真的會讓載入失敗（對照組），證明測試抓得到這個問題
-    if root is None:
-        if not config.FROZEN:
-            return 0
-        root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
-    cleared = 0
-    for dll in root.rglob("*.dll"):
-        try:
-            os.remove(f"{dll}:Zone.Identifier")
-            cleared += 1
-        except OSError:  # 沒有標記（FileNotFoundError）或沒有權限：都不用處理
-            pass
-    return cleared
-
-
 def _desktop_failure_text(exc: BaseException, folder: str, log: str) -> str:
     return (
         "水管譯工無法開啟桌面視窗。\n\n"
@@ -699,7 +675,6 @@ LINUX_BACKEND_HINT = (
 
 
 def run_desktop(native_titlebar: bool = False) -> int:
-    _unblock_bundled_files()  # 必須在載入 pythonnet（pywebview 啟動時）之前
     try:
         import webview
     except ImportError:

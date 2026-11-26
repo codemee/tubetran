@@ -188,36 +188,6 @@ def test_per_monitor_dpi_is_enabled_before_the_window_is_created():
     assert src.index("_enable_per_monitor_dpi()") < src.index("webview.create_window")
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Zone.Identifier 是 NTFS 的功能")
-def test_unblock_clears_the_internet_zone_mark_from_bundled_dlls(tmp_path, monkeypatch):
-    """從 GitHub 下載 ZIP 再解壓縮，檔案會帶「來自網際網路」標記；.NET Framework 拒絕載入這種 DLL，
-    pythonnet 載入 Python.Runtime.dll 失敗，桌面視窗開不起來。啟動時要先把標記清掉（實測重現並驗證過）。"""
-    mark = b"[ZoneTransfer]\r\nZoneId=3\r\n"
-    dll = tmp_path / "pythonnet" / "runtime" / "Python.Runtime.dll"
-    dll.parent.mkdir(parents=True)
-    dll.write_bytes(b"MZ")
-    other = tmp_path / "other.dll"; other.write_bytes(b"MZ")
-    clean = tmp_path / "clean.dll"; clean.write_bytes(b"MZ")        # 本來就沒有標記
-    for f in (dll, other):
-        (f.parent / (f.name + ":Zone.Identifier")).write_bytes(mark)  # 寫入 NTFS 的替代資料流
-    assert Path(f"{dll}:Zone.Identifier").read_bytes() == mark
-
-    monkeypatch.setattr(config, "FROZEN", False)
-    assert cli._unblock_bundled_files() == 0                        # 不是打包版：什麼都不做
-
-    assert cli._unblock_bundled_files(tmp_path) == 2
-    for f in (dll, other):
-        assert not Path(f"{f}:Zone.Identifier").exists()
-        assert f.read_bytes() == b"MZ"                              # 檔案本身沒被動到
-    assert cli._unblock_bundled_files(tmp_path) == 0                # 再跑一次：沒有東西可清，也不會出錯
-
-
-def test_no_unblock_switch_disables_clearing(tmp_path, monkeypatch):
-    """CI 的對照組：設了 TUBETRAN_NO_UNBLOCK 就不清標記（用來證明測試真的抓得到「帶標記就載入失敗」）。"""
-    monkeypatch.setenv("TUBETRAN_NO_UNBLOCK", "1")
-    assert cli._unblock_bundled_files(tmp_path) == 0
-
-
 @pytest.mark.skipif(sys.platform != "win32", reason="pythonnet 只在 Windows")
 def test_selftest_really_loads_pythonnet_and_fails_when_it_cannot(monkeypatch, capsys):
     """只 import webview 看不出 .NET 載入有沒有問題（pythonnet 要到開視窗才載入），
@@ -231,7 +201,7 @@ def test_selftest_really_loads_pythonnet_and_fails_when_it_cannot(monkeypatch, c
     monkeypatch.setitem(sys.modules, "clr", fake)
     assert cli.selftest() == 1
     out = capsys.readouterr().out
-    assert '"pythonnet_clr": "FAIL: RuntimeError' in out and '"unblocked_dlls"' in out
+    assert '"pythonnet_clr": "FAIL: RuntimeError' in out and '"unblocked_dlls"' not in out
 
 
 def test_desktop_failure_dialog_explains_how_to_unblock():
@@ -242,12 +212,30 @@ def test_desktop_failure_dialog_explains_how_to_unblock():
     assert "Unblock" in text.split("TubeTran could not")[1]          # 英文說明也在
 
 
-def test_unblock_runs_before_pywebview_loads_pythonnet():
-    import inspect
+def test_exe_config_lets_dotnet_load_components_from_a_downloaded_zip():
+    """從 GitHub 下載 ZIP 再解壓縮，每個檔案都帶「來自網際網路」標記，.NET Framework 因此拒絕載入 Python.Runtime.dll，
+    桌面視窗開不起來。解法是在 TubeTran.exe 旁邊附 TubeTran.exe.config（loadFromRemoteSources），
+    不再於啟動時刪除每個 DLL 的標記（那要修改使用者資料夾裡的檔案，唯讀資料夾還會失敗）。"""
+    import xml.etree.ElementTree as ET
 
-    src = inspect.getsource(cli.run_desktop)
-    assert src.index("_unblock_bundled_files()") < src.index("import webview")
+    root = Path(__file__).resolve().parent.parent
+    cfg = ET.parse(root / "packaging" / "TubeTran.exe.config").getroot()
+    node = cfg.find("./runtime/loadFromRemoteSources")
+    assert cfg.tag == "configuration" and node is not None and node.get("enabled") == "true"
+    assert not hasattr(cli, "_unblock_bundled_files")                    # 舊做法已移除
 
+
+def test_release_workflow_ships_the_config_and_tests_it_with_a_real_window():
+    """發布流程：把設定檔放進 ZIP、用 smoke_window.ps1 對「最後的 ZIP」開真的視窗（先替每個檔案加標記），
+    並有拿掉設定檔的對照組（必須失敗），證明測試抓得到問題。"""
+    root = Path(__file__).resolve().parent.parent
+    wf = (root / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert "packaging/TubeTran.exe.config" in wf and "packaging/dist/TubeTran/" in wf   # 複製到 TubeTran.exe 旁邊
+    assert "smoke_window.ps1" in wf and "-RemoveConfig" in wf                          # 真的開視窗 + 對照組
+    assert wf.index("壓縮成 ZIP") < wf.index("smoke_window.ps1")                       # 測的是最後要發布的 ZIP
+    assert "TUBETRAN_NO_UNBLOCK" not in wf and "unblocked_dlls" not in wf
+    ps = (root / "packaging" / "smoke_window.ps1").read_text(encoding="utf-8")
+    assert "Zone.Identifier" in ps and "WindowsForms" in ps and "#32770" in ps         # 加標記；用視窗類別區分正常視窗與錯誤對話框
 
 def test_min_window_size_is_small_enough_for_window_managers():
     """視窗管理程式（平鋪／貼齊）會直接指定大小；比最小值小的要求會被擋住，變成「位置對了、大小沒變」。

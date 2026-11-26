@@ -144,7 +144,7 @@ Download `TubeTran-vX.Y.Z-windows-x64.zip` from [Releases](https://github.com/co
 
 > The executable is not code-signed, so Windows SmartScreen may warn; choose "More info → Run anyway".
 >
-> If the desktop window doesn't open and you see an error such as `Failed to resolve Python.Runtime.Loader.Initialize` (versions up to 0.1.1 can do this), Windows has marked the downloaded files as blocked. Right-click the ZIP → Properties → tick "Unblock", then extract it again; or run `Get-ChildItem "TubeTran folder" -Recurse | Unblock-File` in PowerShell. Newer versions clear this mark automatically on startup. Each version's ZIP is built automatically by GitHub Actions and contains the same code as that version on PyPI.
+> If the desktop window doesn't open and you see an error such as `Failed to resolve Python.Runtime.Loader.Initialize` (versions up to 0.1.1 can do this), Windows has marked the downloaded files as blocked. Right-click the ZIP → Properties → tick "Unblock", then extract it again; or run `Get-ChildItem "TubeTran folder" -Recurse | Unblock-File` in PowerShell. Newer ZIPs ship a `TubeTran.exe.config` next to `TubeTran.exe` that tells .NET to allow loading these files, so no unblocking is needed (keep that file; don't delete it or copy only `TubeTran.exe`). Details: ["Windows packaging and the downloaded-ZIP test"](https://github.com/codemee/tubetran/blob/main/docs/en/windows-packaging.md). Each version's ZIP is built automatically by GitHub Actions and contains the same code as that version on PyPI.
 
 ### Download the macOS app (Apple silicon)
 
@@ -344,6 +344,8 @@ git push origin main v0.2.0
 ```
 
 **Release notes:** the top of the release is the "Highlights" from `release-notes/<tag>.md` (what this version adds or fixes, in words users understand, Chinese and English side by side), followed only by the changelog link GitHub generates; download and install instructions live in the README and are not repeated in each release. If the file is missing the workflow stops in the first test stage, before anything is published to PyPI.
+
+**Checking the Windows ZIP:** after packaging, `TubeTran.exe.config` is put into the ZIP and `packaging/smoke_window.ps1` imitates "download from GitHub, extract, double-click" on the final ZIP (it marks every file as downloaded from the Internet, then really opens the window), plus a control with the config removed (which must fail). The reason and the method are in ["Windows packaging and the downloaded-ZIP test"](https://github.com/codemee/tubetran/blob/main/docs/en/windows-packaging.md).
 
 **Dry run:** on GitHub go to Actions → Release → Run workflow; it only tests and builds, and publishes nothing.
 

@@ -144,7 +144,7 @@
 
 > 執行檔沒有數位簽章，Windows SmartScreen 可能會警告；選「其他資訊 → 仍要執行」。
 >
-> 如果桌面視窗打不開、出現 `Failed to resolve Python.Runtime.Loader.Initialize` 之類的錯誤（0.1.1 以前的版本會遇到），是因為 Windows 把從網路下載的檔案標記成「已封鎖」。請對 ZIP 檔按右鍵 →「內容」→ 勾選「解除封鎖」，再重新解壓縮；或在 PowerShell 執行 `Get-ChildItem "TubeTran 資料夾" -Recurse | Unblock-File`。新版程式啟動時會自動清除這個標記。每個版本的 ZIP 由 GitHub Actions 自動建置，內容與 PyPI 上同一版本相同。
+> 如果桌面視窗打不開、出現 `Failed to resolve Python.Runtime.Loader.Initialize` 之類的錯誤（0.1.1 以前的版本會遇到），是因為 Windows 把從網路下載的檔案標記成「已封鎖」。請對 ZIP 檔按右鍵 →「內容」→ 勾選「解除封鎖」，再重新解壓縮；或在 PowerShell 執行 `Get-ChildItem "TubeTran 資料夾" -Recurse | Unblock-File`。新版的 ZIP 在 `TubeTran.exe` 旁附了 `TubeTran.exe.config`，告訴 .NET 允許載入這些檔案，所以不必解除封鎖（請保留這個檔案，不要刪掉或只複製 `TubeTran.exe`）。技術細節見[「Windows 打包與下載情境測試」](https://github.com/codemee/tubetran/blob/main/docs/zh-TW/windows-packaging.md)。每個版本的 ZIP 由 GitHub Actions 自動建置，內容與 PyPI 上同一版本相同。
 
 ### 下載 macOS App（Apple 晶片）
 
@@ -344,6 +344,8 @@ git push origin main v0.2.0
 ```
 
 **Release 說明：** 最前面是 `release-notes/<標籤>.md` 的「本版重點」（這一版新增、修正了什麼，使用者看得懂的描述，中英文並列），之後只附 GitHub 自動產生的變更記錄連結；下載與安裝方式寫在 README，不在每個 Release 裡重複。缺少該檔案時，流程會在最前面的測試階段就停下來，不會等到 PyPI 發布後才發現。
+
+**Windows ZIP 的驗證：** 打包後會把 `TubeTran.exe.config` 放進 ZIP，並用 `packaging/smoke_window.ps1` 對最後的 ZIP 模擬「從 GitHub 下載、解壓縮、雙擊」（替每個檔案加上網路來源標記後真的開視窗），另有拿掉設定檔的對照組（必須失敗）。原因與做法見[「Windows 打包與下載情境測試」](https://github.com/codemee/tubetran/blob/main/docs/zh-TW/windows-packaging.md)。
 
 **試跑：** 到 GitHub 的 Actions → Release → Run workflow，只會測試與建置，不會發布。
 
