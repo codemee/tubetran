@@ -238,3 +238,16 @@ def test_all_confirmations_use_the_custom_dialog_not_the_builtin_confirm():
     i18n = (config.STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
     for key in ("modal_ok", "modal_cancel", "modal_delete", "modal_redo", "modal_retrans", "modal_reset", "modal_cancel_job", "modal_keep_job", "modal_discard", "modal_keep"):
         assert i18n.count(f"{key}:") == 2, key                                  # 中文、英文各一
+
+def test_cancel_message_is_replaced_when_the_cancel_finishes():
+    """取消正在處理的「目前這支」影片時，後端回 202，畫面顯示「已要求取消…」；要等背景任務做完目前這一步才真的結束。
+    影片庫裡那一項消失（取消完成）時，訊息要換成「已取消」，不然會一直像是還在取消。換影片或重設畫面後就不再更新。"""
+    import re
+
+    js = (config.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    i18n = (config.STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
+    assert re.search(r"cancelNotice = cancelling \? id : null", js)                              # 取消中才記下是哪一支
+    assert re.search(r"cancelNotice && !library\.some\(\(v\) => v\.video_id === cancelNotice\)", js)  # 那一項消失 = 取消完成
+    assert 'setStatus(() => t("status_cancelled"))' in js
+    assert re.search(r"function resetView\(\) \{\s*cancelNotice = null;", js)                    # 換影片：不再更新
+    assert i18n.count("status_cancelled:") == 2                                                 # 中文、英文各一

@@ -1296,6 +1296,7 @@ async function pollJob(id, my) {
 }
 
 function resetView() {
+  cancelNotice = null; // 換影片或重設畫面：「已要求取消」的訊息不再是目前的狀態
   segs = []; videoId = null; current = -1; listCur = -1; follow = true; partialShown = false;
   slideIdx = -1; srch.cur = -1; // 搜尋字串與面板保留，換到下一支影片照樣搜尋
   bookmarks = []; bmFor = null; bmEditing = -1; bmDraft = ""; bmSeq++; setBmOpen(false); setFsBm(false); $("bm-wrap").hidden = $("sbm").hidden = true;
@@ -1400,12 +1401,19 @@ $("url").addEventListener("mouseup", (e) => { if (urlJustFocused) e.preventDefau
 $("url").addEventListener("blur", () => { urlJustFocused = false; });
 
 // ── 影片庫（已快取的影片，含翻譯進行中／中斷的） ──
-let library = [], libRetry = 0, libTimer, libKey = "";
+// cancelNotice：剛取消的「目前這支」影片的 ID。取消要等背景任務做完目前這一步才會真的結束，這段時間畫面下方顯示「已要求取消…」；
+// 影片庫裡那一項消失（取消完成）時，要把訊息換成「已取消」，不然會一直像是還在取消。
+let library = [], libRetry = 0, libTimer, libKey = "", cancelNotice = null;
 async function loadLibrary() {
   clearTimeout(libTimer);
+  let fetched = true;
   try {
     library = await (await fetch("/api/library")).json();
-  } catch (_) { library = []; }
+  } catch (_) { library = []; fetched = false; }
+  if (fetched && cancelNotice && !library.some((v) => v.video_id === cancelNotice)) {
+    cancelNotice = null;
+    setStatus(() => t("status_cancelled"));
+  }
   renderLibrary();
   const busy = library.some((v) => v.status === "running");
   const needTitle = library.some((v) => v.status === "done" && v.title_trans === null);
@@ -1723,6 +1731,7 @@ async function deleteVideo(id) {
     $("empty").hidden = false;
     $("stage").classList.add("no-video"); // 播放器會停在剛才的縮圖，要藏起來才看得到提示
     setStatus(() => t(cancelling ? "status_cancelling" : "status_deleted"));
+    cancelNotice = cancelling ? id : null; // 取消完成時由 loadLibrary 換成「已取消」（resetView 已經清過，所以要在它之後設定）
   }
   loadLibrary(); // 還有處理中的項目就會持續更新，取消完成後那一項會自己消失
 }

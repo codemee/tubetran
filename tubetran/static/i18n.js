@@ -141,6 +141,7 @@ const I18N = {
     confirm_cancel: "「{name}」還在處理中。\n要取消處理，並清除已取得的字幕、翻譯與音檔嗎？（已呼叫 Claude 翻譯的部分無法退費）",
     lib_cancelling: "取消中…",
     status_cancelling: "已要求取消，處理完目前這一步就會結束並清除",
+    status_cancelled: "已取消，並清除這支影片的快取",
     confirm_delete: "刪除「{name}」的快取？\n字幕、翻譯與已下載的音檔都會被清除，再次觀看需要重新處理（並重新呼叫 Claude）。",
   },
   en: {
@@ -284,6 +285,7 @@ const I18N = {
     confirm_cancel: "\"{name}\" is still being processed.\nCancel it and remove the subtitles, translations and audio fetched so far? (Claude calls already made are not refunded.)",
     lib_cancelling: "Cancelling…",
     status_cancelling: "Cancel requested — it will stop and clean up after the current step",
+    status_cancelled: "Cancelled; the cache for this video was removed",
     confirm_delete: "Delete the cache for \"{name}\"?\nSubtitles, translations and downloaded audio will be removed. Watching it again requires reprocessing (and calling Claude again).",
   },
 };
