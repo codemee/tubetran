@@ -347,6 +347,8 @@ git push origin main v0.2.0
 
 **Windows ZIP 的驗證：** 打包後會把 `TubeTran.exe.config` 放進 ZIP，並用 `packaging/smoke_window.ps1` 對最後的 ZIP 模擬「從 GitHub 下載、解壓縮、雙擊」（替每個檔案加上網路來源標記後真的開視窗），另有拿掉設定檔的對照組（必須失敗）。原因與做法見[「Windows 打包與下載情境測試」](https://github.com/codemee/tubetran/blob/main/docs/zh-TW/windows-packaging.md)。
 
+**Windows 11 的貼齊版面：** 滑鼠停在自繪的最大化鈕上會彈出貼齊版面選單。WebView2 把滑鼠擋在頂層視窗之外，所以要在按鈕上蓋一個透明子視窗。做法見[「自繪最大化鈕與 Windows 11 貼齊版面」](https://github.com/codemee/tubetran/blob/main/docs/zh-TW/windows-snap-layouts.md)。
+
 **試跑：** 到 GitHub 的 Actions → Release → Run workflow，只會測試與建置，不會發布。
 
 **PyPI 只需要設定一次：** 到 [pypi.org/manage/account/publishing](https://pypi.org/manage/account/publishing/) 新增一個「pending publisher」，填入 PyPI Project name `tubetran`、Owner `codemee`、Repository name `tubetran`、Workflow name `release.yml`、Environment name `pypi`（受信任的發布者，不需要保存任何金鑰）。或者改在 GitHub 的 Settings → Secrets 設定 `PYPI_API_TOKEN`。PyPI 的版本號發布後就不能重複使用，所以發布前請先用試跑確認。

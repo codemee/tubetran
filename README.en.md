@@ -347,6 +347,8 @@ git push origin main v0.2.0
 
 **Checking the Windows ZIP:** after packaging, `TubeTran.exe.config` is put into the ZIP and `packaging/smoke_window.ps1` imitates "download from GitHub, extract, double-click" on the final ZIP (it marks every file as downloaded from the Internet, then really opens the window), plus a control with the config removed (which must fail). The reason and the method are in ["Windows packaging and the downloaded-ZIP test"](https://github.com/codemee/tubetran/blob/main/docs/en/windows-packaging.md).
 
+**Windows 11 Snap Layouts:** resting the pointer on the custom maximize button opens the Snap Layouts flyout. WebView2 keeps the mouse away from the top-level window, so a transparent child window is placed over the button. See ["The custom maximize button and Windows 11 Snap Layouts"](https://github.com/codemee/tubetran/blob/main/docs/en/windows-snap-layouts.md).
+
 **Dry run:** on GitHub go to Actions → Release → Run workflow; it only tests and builds, and publishes nothing.
 
 **PyPI needs a one-time setup:** at [pypi.org/manage/account/publishing](https://pypi.org/manage/account/publishing/) add a "pending publisher" with PyPI Project name `tubetran`, Owner `codemee`, Repository name `tubetran`, Workflow name `release.yml` and Environment name `pypi` (trusted publishing — no secret to store). Alternatively set a `PYPI_API_TOKEN` secret under GitHub Settings → Secrets. A PyPI version number can't be reused once published, so do a dry run first.

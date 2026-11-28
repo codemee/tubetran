@@ -21,7 +21,24 @@
     topbar.classList.toggle("pywebview-drag-region", isWin && !maximized);
     document.querySelector(".brand").classList.toggle("pywebview-drag-region", isWin && !maximized);
     $("resize-handles").hidden = maximized;
+    reportMaxButton();
   }
+
+  // Windows 11 的貼齊版面：後端要在最大化鈕的位置蓋一個透明子視窗（WebView2 把滑鼠擋在頂層視窗之外），
+  // 所以每次按鈕的位置或縮放比例改變，都回報給後端。蓋住之後滑鼠事件到不了這裡，懸停與按下的外觀由後端通知（__maxButtonState）。
+  let lastMaxRect = "";
+  function reportMaxButton() {
+    if (!api || !api.set_max_button || !isWin) return;
+    const r = maxBtn.getBoundingClientRect(), k = window.devicePixelRatio || 1;
+    const key = [r.left, r.top, r.width, r.height, k].join();
+    if (key === lastMaxRect) return;
+    lastMaxRect = key;
+    api.set_max_button(r.left, r.top, r.width, r.height, k);
+  }
+  window.__maxButtonState = (s) => {
+    maxBtn.classList.toggle("pointer-hover", s === 1);
+    maxBtn.classList.toggle("pointer-down", s === 2);
+  };
 
   async function toggleMax() {
     try {
@@ -113,6 +130,9 @@
     window.repaintDesktop = paint; // 切換介面語言時更新按鈕提示
     // 視窗大小被外部改變（視窗管理程式、貼齊等）時，重新向後端確認是否仍是最大化，讓按鈕與縮放把手跟著對
     let t = 0;
+    new ResizeObserver(reportMaxButton).observe(topbar);
+    window.addEventListener("resize", reportMaxButton);
+    setInterval(reportMaxButton, 2000); // 保險：位置在其他情況下變動（字型載入、縮放）也跟得上
     window.addEventListener("resize", () => {
       clearTimeout(t);
       t = setTimeout(async () => {

@@ -52,6 +52,19 @@ def client_rect_for_zoomed(proposed: LTRB, monitor: LTRB, work: LTRB, zoomed: bo
     return max(left, work[0]), max(top, work[1]), min(right, work[2]), min(bottom, work[3])
 
 
+def client_rect_with_native_frame(proposed: LTRB, default_client: LTRB, monitor: LTRB, work: LTRB, zoomed: bool) -> LTRB:
+    """保留原生邊框的版本（Windows 11 的貼齊版面需要）：左、右、下用系統算出的客戶區（default_client），
+    只有上緣收回到視窗最上面——標題列的位置交給網頁畫。最大化與全螢幕的處理和 client_rect_for_zoomed 一樣。"""
+    if zoomed or proposed == monitor:
+        return client_rect_for_zoomed(proposed, monitor, work, zoomed)
+    return default_client[0], proposed[1], default_client[2], default_client[3]
+
+
+def snap_layouts_supported() -> bool:
+    """Windows 11（組建 22000 以上）才有貼齊版面選單。"""
+    return sys.platform == "win32" and sys.getwindowsversion().build >= 22000
+
+
 def same_rect(a: Rect, b: Rect, tol: int = 2) -> bool:
     """兩個範圍是否相同（容許幾個像素的誤差）。"""
     return all(abs(p - q) <= tol for p, q in zip(a, b))
@@ -286,6 +299,10 @@ def restore(hwnd: int) -> None:
     _user32().ShowWindow(hwnd, 9)  # SW_RESTORE
 
 
+def maximize(hwnd: int) -> None:
+    _user32().ShowWindow(hwnd, 3)  # SW_MAXIMIZE
+
+
 def notify_move_size(hwnd: int, start: bool) -> None:
     """廣播「視窗開始／結束被使用者移動」（EVENT_SYSTEM_MOVESIZESTART / END）。
 
@@ -300,11 +317,15 @@ def has_resizable_frame(hwnd: int) -> bool:
     return bool(_user32().GetWindowLongW(hwnd, _GWL_STYLE) & _WS_THICKFRAME)
 
 
-def install_resizable_frame(hwnd: int) -> bool:
-    """替視窗加上 WS_THICKFRAME 與最小化鈕樣式，並攔截 WM_NCCALCSIZE 讓邊框不被畫出來。可重複呼叫。
+def install_resizable_frame(hwnd: int, keep_native_frame: bool = False) -> bool:
+    """替視窗加上 WS_THICKFRAME 與最小化鈕樣式，並攔截 WM_NCCALCSIZE。可重複呼叫。
+    keep_native_frame=False：客戶區涵蓋整個視窗，邊框不會被畫出來。
+    keep_native_frame=True：保留系統的左、右、下邊框、只收回標題列（Windows 11 的貼齊版面選單需要視窗有原生邊框，
+    見 docs/zh-TW/windows-snap-layouts.md）。
     回傳視窗現在是否具有 WS_THICKFRAME。"""
     u = _user32()
-    if hwnd not in _hooks:
+    fresh = hwnd not in _hooks
+    if fresh:
         old = u.GetWindowLongPtrW(hwnd, _GWLP_WNDPROC)
 
         def proc(h, msg, wparam, lparam):
@@ -312,20 +333,205 @@ def install_resizable_frame(hwnd: int) -> bool:
                 if msg == _WM_NCCALCSIZE and wparam:
                     params = ctypes.cast(lparam, ctypes.POINTER(_NCCALCSIZE_PARAMS)).contents
                     r = params.rgrc[0]
+                    proposed = (r.left, r.top, r.right, r.bottom)
                     monitor, work = _monitor_rects(h)
-                    left, top, right, bottom = client_rect_for_zoomed(
-                        (r.left, r.top, r.right, r.bottom), monitor, work, bool(u.IsZoomed(h)))
-                    r.left, r.top, r.right, r.bottom = left, top, right, bottom
-                    return 0  # 客戶區 = 整個視窗（沒有非客戶區），所以看不到邊框
+                    zoomed = bool(u.IsZoomed(h))
+                    if _hooks[h][2]:
+                        default = proposed
+                        if not zoomed and proposed != monitor:
+                            u.CallWindowProcW(old, h, msg, wparam, lparam)  # 先讓系統算出原生邊框
+                            default = (r.left, r.top, r.right, r.bottom)
+                        new = client_rect_with_native_frame(proposed, default, monitor, work, zoomed)
+                    else:
+                        new = client_rect_for_zoomed(proposed, monitor, work, zoomed)
+                    r.left, r.top, r.right, r.bottom = new
+                    return 0
             except Exception:  # noqa: BLE001 — 視窗程序裡不能丟例外；出錯就交還給原本的處理
                 pass
             return u.CallWindowProcW(old, h, msg, wparam, lparam)
 
         callback = _WNDPROC(proc)
+        _hooks[hwnd] = (callback, old, keep_native_frame)
         u.SetWindowLongPtrW(hwnd, _GWLP_WNDPROC, ctypes.cast(callback, ctypes.c_void_p).value)
-        _hooks[hwnd] = (callback, old)
+    else:
+        _hooks[hwnd] = (*_hooks[hwnd][:2], keep_native_frame)
     style = u.GetWindowLongW(hwnd, _GWL_STYLE)
-    if style & (_WS_THICKFRAME | _WS_MINIMIZEBOX) != (_WS_THICKFRAME | _WS_MINIMIZEBOX):
+    if fresh or style & (_WS_THICKFRAME | _WS_MINIMIZEBOX) != (_WS_THICKFRAME | _WS_MINIMIZEBOX):
         u.SetWindowLongW(hwnd, _GWL_STYLE, style | _WS_THICKFRAME | _WS_MINIMIZEBOX)
         u.SetWindowPos(hwnd, None, 0, 0, 0, 0, _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOZORDER | _SWP_NOACTIVATE | _SWP_FRAMECHANGED)
     return has_resizable_frame(hwnd)
+
+
+# ── 最大化鈕上的「貼齊版面」：覆蓋在按鈕上的透明子視窗 ──
+# Windows 11 只有在滑鼠停在「WM_NCHITTEST 回報 HTMAXBUTTON」的地方才會顯示貼齊版面選單。
+# 但 WebView2 的內容是另一個行程的子視窗（Chrome_WidgetWin_1），滑鼠在它上面時，系統只會問它、
+# 不會去問我們的頂層視窗，所以頂層視窗的 WM_NCHITTEST 根本收不到。解法（Tauri 的 decorum 也這樣做）：
+# 在最大化鈕的位置蓋一個同行程的透明子視窗，由它回報 HTMAXBUTTON，並自己處理懸停、按下與點擊。
+_WM_NCHITTEST, _WM_NCMOUSEMOVE, _WM_NCMOUSELEAVE = 0x0084, 0x00A0, 0x02A2
+_WM_NCLBUTTONDOWN, _WM_NCLBUTTONUP, _WM_MOUSEMOVE = 0x00A1, 0x00A2, 0x0200
+_WM_TIMER, _WM_ERASEBKGND, _WM_SYSCOMMAND, _WM_NCDESTROY = 0x0113, 0x0014, 0x0112, 0x0082
+_HTMAXBUTTON, _SC_MAXIMIZE, _SC_RESTORE = 9, 0xF030, 0xF120
+_WS_CHILD, _WS_CLIPSIBLINGS = 0x40000000, 0x04000000
+_WS_EX_LAYERED, _WS_EX_NOACTIVATE = 0x00080000, 0x08000000
+_SWP_SHOWWINDOW, _SWP_HIDEWINDOW = 0x0040, 0x0080
+_TME_LEAVE, _TME_NONCLIENT = 0x2, 0x10
+_HWND_TOP = 0
+_HOVER_TIMER, _HOVER_POLL_MS = 1, 60
+BTN_IDLE, BTN_HOVER, BTN_PRESSED = 0, 1, 2
+_OVERLAY_CLASS = "TubeTranMaxButton"
+
+
+class _WNDCLASSEXW(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("style", wintypes.UINT), ("lpfnWndProc", _WNDPROC),
+                ("cbClsExtra", ctypes.c_int), ("cbWndExtra", ctypes.c_int), ("hInstance", wintypes.HINSTANCE),
+                ("hIcon", wintypes.HICON), ("hCursor", wintypes.HANDLE), ("hbrBackground", wintypes.HBRUSH),
+                ("lpszMenuName", wintypes.LPCWSTR), ("lpszClassName", wintypes.LPCWSTR), ("hIconSm", wintypes.HICON)]
+
+
+class _TRACKMOUSEEVENT(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("dwFlags", wintypes.DWORD), ("hwndTrack", wintypes.HWND), ("dwHoverTime", wintypes.DWORD)]
+
+
+_overlay_ready = False
+_overlays: dict[int, "_MaxButtonOverlay"] = {}          # 父視窗 hwnd -> 覆蓋層
+_overlays_by_hwnd: dict[int, "_MaxButtonOverlay"] = {}  # 覆蓋層自己的 hwnd -> 覆蓋層
+_overlay_class: tuple | None = None                     # (視窗程序回呼, hInstance)：類別只註冊一次，回呼要一直存活
+
+
+def _overlay_proc(h, msg, wparam, lparam):
+    ov = _overlays_by_hwnd.get(h)
+    if ov is None:  # 建立視窗的過程中（WM_NCCREATE 等）還沒登記
+        return _user32().DefWindowProcW(h, msg, wparam, lparam)
+    return ov.wndproc(h, msg, wparam, lparam)
+
+
+def _register_overlay_class():
+    global _overlay_class
+    if _overlay_class is None:
+        u = _overlay_api()
+        k32 = ctypes.WinDLL("kernel32")
+        k32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+        k32.GetModuleHandleW.restype = wintypes.HMODULE
+        hinst = k32.GetModuleHandleW(None)
+        callback = _WNDPROC(_overlay_proc)
+        wc = _WNDCLASSEXW()
+        wc.cbSize, wc.lpfnWndProc, wc.hInstance, wc.lpszClassName = ctypes.sizeof(wc), callback, hinst, _OVERLAY_CLASS
+        if not u.RegisterClassExW(ctypes.byref(wc)):
+            raise OSError("無法註冊最大化鈕覆蓋層的視窗類別")
+        _overlay_class = (callback, hinst)
+    return _overlay_class[1]
+
+
+def _overlay_api():
+    """覆蓋層專用的 user32 函式簽章（專屬的 WinDLL 實例，理由同 _user32）。"""
+    global _overlay_ready
+    u = _user32()
+    if not _overlay_ready:
+        u.RegisterClassExW.argtypes = [ctypes.POINTER(_WNDCLASSEXW)]
+        u.RegisterClassExW.restype = wintypes.ATOM
+        u.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_int, ctypes.c_int,
+                                      ctypes.c_int, ctypes.c_int, wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, wintypes.LPVOID]
+        u.CreateWindowExW.restype = wintypes.HWND
+        u.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        u.DefWindowProcW.restype = ctypes.c_ssize_t
+        u.SetLayeredWindowAttributes.argtypes = [wintypes.HWND, wintypes.COLORREF, ctypes.c_ubyte, wintypes.DWORD]
+        u.SetTimer.argtypes = [wintypes.HWND, ctypes.c_size_t, wintypes.UINT, ctypes.c_void_p]
+        u.SetTimer.restype = ctypes.c_size_t
+        u.KillTimer.argtypes = [wintypes.HWND, ctypes.c_size_t]
+        u.TrackMouseEvent.argtypes = [ctypes.POINTER(_TRACKMOUSEEVENT)]
+        u.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        u.DestroyWindow.argtypes = [wintypes.HWND]
+        _overlay_ready = True
+    return u
+
+
+class _MaxButtonOverlay:
+    """蓋在自製最大化鈕上的透明子視窗。必須在建立父視窗的執行緒（UI 執行緒）上建立，它的訊息才會被那邊處理。
+    on_state(state) 在 UI 執行緒被呼叫（BTN_IDLE／BTN_HOVER／BTN_PRESSED）；回呼要很快，不能等網頁。"""
+
+    def __init__(self, parent: int, on_state):
+        self.parent, self._on_state, self.state = parent, on_state, BTN_IDLE
+        u = _overlay_api()
+        hinst = _register_overlay_class()
+        self.hwnd = u.CreateWindowExW(_WS_EX_LAYERED | _WS_EX_NOACTIVATE, _OVERLAY_CLASS, None, _WS_CHILD | _WS_CLIPSIBLINGS,
+                                      0, 0, 1, 1, parent, None, hinst, None)
+        if not self.hwnd:
+            raise OSError("無法建立最大化鈕覆蓋層")
+        _overlays_by_hwnd[self.hwnd] = self
+        u.SetLayeredWindowAttributes(self.hwnd, 0, 1, 0x2)  # LWA_ALPHA：幾乎全透明，但仍然擋得住滑鼠、也能被命中測試
+
+    def _set_state(self, state: int) -> None:
+        previous, self.state = self.state, state
+        if state == previous:
+            return
+        u = _user32()
+        if state == BTN_IDLE:
+            u.KillTimer(self.hwnd, _HOVER_TIMER)
+        elif previous == BTN_IDLE:
+            u.SetTimer(self.hwnd, _HOVER_TIMER, _HOVER_POLL_MS, None)  # 滑鼠離開的訊息不一定可靠，另外定時確認游標還在不在
+        try:
+            self._on_state(state)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _cursor_inside(self) -> bool:
+        x, y = cursor_pos()
+        r = get_rect(self.hwnd)
+        return r[0] <= x < r[0] + r[2] and r[1] <= y < r[1] + r[3]
+
+    def wndproc(self, h, msg, wparam, lparam):
+        u = _user32()
+        try:
+            if msg == _WM_NCHITTEST:
+                return _HTMAXBUTTON
+            if msg == _WM_ERASEBKGND:
+                return 1
+            if msg == _WM_NCMOUSEMOVE:
+                if self.state == BTN_IDLE:
+                    self._set_state(BTN_HOVER)
+                    u.TrackMouseEvent(ctypes.byref(_TRACKMOUSEEVENT(ctypes.sizeof(_TRACKMOUSEEVENT), _TME_LEAVE | _TME_NONCLIENT, h, 0)))
+                return u.DefWindowProcW(h, msg, wparam, lparam)  # 照常交還系統：貼齊版面靠這個訊息觸發
+            if msg == _WM_MOUSEMOVE:
+                self._set_state(BTN_IDLE)
+            elif msg == _WM_NCMOUSELEAVE:
+                # 貼齊版面選單一出現就會送來這個訊息，但游標其實還在鈕上，按鈕要維持高亮（原生視窗也是）。
+                # 是不是真的離開，由定時器依游標位置判斷。
+                if not self._cursor_inside():
+                    self._set_state(BTN_IDLE)
+            elif msg == _WM_TIMER and wparam == _HOVER_TIMER:
+                if not self._cursor_inside():
+                    self._set_state(BTN_IDLE)
+                return 0
+            elif msg == _WM_NCLBUTTONDOWN:
+                self._set_state(BTN_PRESSED)
+                return 0  # 不交給系統：它會去畫不存在的標題列按鈕
+            elif msg == _WM_NCLBUTTONUP:
+                pressed = self.state == BTN_PRESSED
+                self._set_state(BTN_HOVER)
+                if pressed:
+                    u.PostMessageW(self.parent, _WM_SYSCOMMAND, _SC_RESTORE if u.IsZoomed(self.parent) else _SC_MAXIMIZE, 0)
+                return 0
+        except Exception:  # noqa: BLE001 — 視窗程序裡不能丟例外
+            pass
+        return u.DefWindowProcW(h, msg, wparam, lparam)
+
+    def place(self, rect: Rect | None) -> None:
+        """rect = 最大化鈕在父視窗客戶區裡的位置（實體像素）；None 表示藏起來（全螢幕、按鈕不見時）。"""
+        u = _user32()
+        if rect is None:
+            u.SetWindowPos(self.hwnd, None, 0, 0, 0, 0, _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOZORDER | _SWP_NOACTIVATE | _SWP_HIDEWINDOW)
+            self._set_state(BTN_IDLE)
+            return
+        x, y, w, h = rect
+        u.SetWindowPos(self.hwnd, _HWND_TOP, x, y, w, h, _SWP_NOACTIVATE | _SWP_SHOWWINDOW)  # 每次都放到最上面，蓋過 WebView2
+
+
+
+def place_max_button_overlay(parent: int, rect: Rect | None, on_state) -> None:
+    """建立（第一次）並擺放最大化鈕的覆蓋層。必須在 UI 執行緒呼叫。"""
+    ov = _overlays.get(parent)
+    if ov is None:
+        if rect is None:
+            return
+        ov = _overlays[parent] = _MaxButtonOverlay(parent, on_state)
+    ov.place(rect)

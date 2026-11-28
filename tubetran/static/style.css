@@ -137,8 +137,8 @@ body {
   background: transparent; color: var(--text); cursor: default; transition: background .12s;
 }
 #win-ctrls button svg { width: 12px; height: 12px; }
-#win-ctrls button:hover { background: color-mix(in srgb, var(--text) 13%, transparent); }
-#win-ctrls button:active { background: color-mix(in srgb, var(--text) 22%, transparent); }
+#win-ctrls button:hover, #win-max.pointer-hover { background: color-mix(in srgb, var(--text) 13%, transparent); }
+#win-ctrls button:active, #win-max.pointer-down { background: color-mix(in srgb, var(--text) 22%, transparent); }
 #win-ctrls #win-close:hover { background: #e81123; color: #fff; }
 #win-ctrls #win-close:active { background: #f1707a; color: #fff; }
 #win-ctrls button:focus-visible { outline-offset: -3px; }

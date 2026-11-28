@@ -60,7 +60,10 @@ def api(monkeypatch):
     state = {"rect": (100, 200, 1000, 700), "set": []}
     monkeypatch.setattr(winctl, "get_rect", lambda hwnd: state["rect"])
     monkeypatch.setattr(winctl, "work_area", lambda hwnd: (0, 0, 1920, 1040))
-    monkeypatch.setattr(winctl, "is_zoomed", lambda hwnd: False)  # 假的 hwnd；不呼叫真的 user32
+    state["zoomed"] = False
+    monkeypatch.setattr(winctl, "is_zoomed", lambda hwnd: state["zoomed"])  # 假的 hwnd；不呼叫真的 user32
+    monkeypatch.setattr(winctl, "maximize", lambda hwnd: state.update(zoomed=True))
+    monkeypatch.setattr(winctl, "restore", lambda hwnd: state.update(zoomed=False))
 
     def set_rect(hwnd, x, y, w, h):
         state["rect"] = (x, y, w, h)
@@ -74,12 +77,14 @@ def api(monkeypatch):
     return a
 
 
-def test_maximize_fills_work_area_and_restore_goes_back(api):
+def test_maximize_uses_the_system_maximize_and_restore_goes_back(api):
+    """最大化走系統的最大化（保留原生邊框後，自己鋪滿工作區會在左右下留下邊框的空隙）；
+    系統會處理工作區範圍與還原時的位置。"""
     assert api.window_state() == {"custom": True, "maximized": False}
     assert api.window_toggle_maximize()["maximized"] is True
-    assert api.state["rect"] == (0, 0, 1920, 1040)           # 工作區：不蓋住工作列
+    assert api.state["zoomed"] is True and api.state["set"] == []   # 沒有自己搬視窗
     assert api.window_toggle_maximize()["maximized"] is False
-    assert api.state["rect"] == (100, 200, 1000, 700)         # 回到原本的位置與大小
+    assert api.state["zoomed"] is False
 
 
 def test_drag_broadcasts_move_size_events_once_so_window_managers_can_snap(api, monkeypatch):
@@ -255,21 +260,15 @@ def test_system_maximize_is_detected_and_restored_with_the_system_restore(api, m
     assert api.window_state()["maximized"] is False
 
 
-def test_maximized_flag_is_dropped_when_the_window_is_changed_externally(api):
+def test_maximized_state_follows_the_system(api):
+    """貼齊版面、Win+↑、視窗管理程式改變最大化狀態時，按鈕與縮放把手要跟著對。"""
     api.window_toggle_maximize()
     assert api.window_state()["maximized"] is True
-    api.state["rect"] = (0, 0, 960, 1040)          # 視窗管理程式把它排成左半邊
+    api.state["zoomed"] = False                    # 被系統還原（例如貼齊版面把它排成左半邊）
     assert api.window_state()["maximized"] is False
-    api.resize_begin("e", 1.0)                     # 旗標放掉後，縮放不再被擋住
+    api.resize_begin("e", 1.0)                     # 不再是最大化，縮放不被擋住
     assert api._resize is not None
-
-
-def test_toggle_after_external_change_maximizes_again_instead_of_restoring(api):
-    api.window_toggle_maximize()
-    api.state["rect"] = (0, 0, 960, 1040)          # 外部改過；旗標過期
     assert api.window_toggle_maximize()["maximized"] is True   # 這次應該是「最大化」，不是「還原」
-    assert api.state["rect"] == (0, 0, 1920, 1040)
-    assert api._normal_rect == (0, 0, 960, 1040)   # 還原時回到外部排好的位置
 
 
 def test_same_rect_tolerance():
@@ -302,6 +301,48 @@ def test_client_rect_of_a_system_maximized_window_is_clamped_to_the_work_area():
 def test_client_rect_of_fullscreen_is_left_alone():
     """全螢幕（範圍剛好是整個螢幕、含工作列區域）不能被縮進工作區，否則底下會露出一條工作列。"""
     assert winctl.client_rect_for_zoomed(MONITOR, MONITOR, WORK, zoomed=True) == MONITOR
+
+
+def test_native_frame_keeps_system_left_right_bottom_and_reclaims_only_the_titlebar():
+    """貼齊版面需要原生邊框：左、右、下用系統算的，上緣收回到視窗最上面讓網頁畫標題列。"""
+    proposed = (100, 100, 900, 700)
+    default = (108, 131, 892, 692)   # 系統算出的客戶區：左右下各縮 8，上面縮掉標題列
+    assert winctl.client_rect_with_native_frame(proposed, default, MONITOR, WORK, zoomed=False) == (108, 100, 892, 692)
+
+
+def test_native_frame_leaves_maximized_and_fullscreen_to_the_whole_window_rules():
+    overhang = (-8, -8, 1928, 1048)
+    assert winctl.client_rect_with_native_frame(overhang, (0, 0, 1, 1), MONITOR, WORK, zoomed=True) == WORK
+    assert winctl.client_rect_with_native_frame(MONITOR, (0, 0, 1, 1), MONITOR, WORK, zoomed=False) == MONITOR
+
+
+def test_max_button_report_is_validated_and_converted_to_physical_pixels(api, monkeypatch):
+    placed = []
+    monkeypatch.setattr(winctl, "snap_layouts_supported", lambda: True)
+    monkeypatch.setattr(api, "_place_max_overlay", lambda: placed.append(api._max_rect) or True)
+    assert api.set_max_button(1000, 0, 46.5, 40, 1.5) is True
+    assert placed[-1] == (1500, 0, 70, 60)               # CSS 像素 × 縮放比例 = 客戶區裡的實體像素
+    api.set_max_button(0, 0, 0, 0, 1)                    # 按鈕不在畫面上：收起覆蓋層
+    assert placed[-1] is None
+    assert api.set_max_button("x", 0, 1, 1, 1) is False  # 不合理的數值不處理
+    assert api.set_max_button(0, 0, 9999, 40, 1) is False
+    assert api.set_max_button(0, 0, 46, 40, 0) is False
+
+
+def test_overlay_is_hidden_in_fullscreen_and_not_used_without_snap_layouts(api, monkeypatch):
+    monkeypatch.setattr(winctl, "snap_layouts_supported", lambda: False)
+    assert api.set_max_button(0, 0, 46, 40, 1) is False  # Windows 10：沒有貼齊版面，不需要覆蓋層
+    monkeypatch.setattr(winctl, "snap_layouts_supported", lambda: True)
+    placed = []
+    monkeypatch.setattr(winctl, "place_max_button_overlay", lambda hwnd, rect, cb: placed.append(rect))
+    api._window.native = type("N", (), {"Invoke": staticmethod(lambda f: f())})()
+    import types
+    monkeypatch.setitem(sys.modules, "System", types.SimpleNamespace(Func={object: lambda f: f}, Type=object))
+    monkeypatch.setattr(sys, "platform", "win32")
+    api.set_max_button(100, 0, 46, 40, 1)
+    api._fullscreen = True
+    api._place_max_overlay()
+    assert placed == [(100, 0, 46, 40), None]
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="只有 Windows 有 user32")
@@ -353,7 +394,7 @@ def test_js_api_does_not_expose_internal_state():
     public = {n for n in dir(cli._DesktopApi(True)) if not n.startswith("_")}
     assert public == {"open_external", "save_download", "set_fullscreen", "cursor_pos", "logo_fraction", "fullscreen_key_down", "caption_key_down", "bookmark_key_down", "subtitle_key", "set_unsaved", "window_state", "window_minimize", "window_toggle_maximize",
                       "window_move_begin", "window_move_to", "window_move_end", "window_close", "resize_begin", "resize_to", "resize_end",
-                      "set_window_title"}
+                      "set_window_title", "set_max_button"}
 
 
 def test_set_window_title_syncs_window_and_rejects_bad_input():

@@ -203,7 +203,9 @@ class _DesktopApi:
         # custom_chrome：視窗沒有系統標題列與邊框，由網頁自己畫視窗按鈕、處理拖曳與邊緣縮放
         self._custom = custom_chrome
         self._maximized = False
-        self._normal_rect = None
+        self._max_rect = None      # 最大化鈕在視窗客戶區裡的位置（實體像素），網頁回報
+        self._max_state = 0        # 滑鼠在最大化鈕上的狀態：0 無、1 懸停、2 按下
+        self._max_pushing = False
         self._resize = None
         self._moving = False
         self._move_origin = None
@@ -271,6 +273,7 @@ class _DesktopApi:
             self._window.toggle_fullscreen()
             self._fullscreen = on
             self._apply_resizable_frame()  # WinForms 重設邊框樣式時可能把我們加的 WS_THICKFRAME 洗掉
+            self._place_max_overlay()      # 全螢幕時收起最大化鈕上的覆蓋層，離開時放回去
 
     def _apply_resizable_frame(self):
         """讓無框視窗仍具有 WS_THICKFRAME（但不畫出邊框）。視窗管理程式（FancyZones 等）靠它判斷
@@ -280,7 +283,8 @@ class _DesktopApi:
         try:
             hwnd = self._hwnd()
             if hwnd:
-                winctl.install_resizable_frame(hwnd)
+                # Windows 11：保留原生邊框，最大化鈕上才叫得出貼齊版面（見 docs/zh-TW/windows-snap-layouts.md）
+                winctl.install_resizable_frame(hwnd, keep_native_frame=winctl.snap_layouts_supported())
         except Exception as e:  # noqa: BLE001 — 失敗只是少了「被排版程式縮放」的功能，不能讓程式掛掉
             print(f"無法設定視窗的可調整大小樣式：{e}", file=sys.stderr)
 
@@ -315,17 +319,77 @@ class _DesktopApi:
             return winctl.find_window(self._title)
 
     def _sync_maximized(self):
-        """「最大化」有兩種：我們自己鋪滿工作區（記在旗標裡），以及系統的最大化（Win+↑、拖到螢幕上緣貼齊、
-        FancyZones 等，用 IsZoomed 查）。視窗若被外部改過範圍，旗標要放掉，否則按鈕會停在「還原」、縮放也被擋住。"""
+        """Windows 的最大化一律是系統的最大化（按鈕、Win+↑、拖到螢幕上緣貼齊、貼齊版面、FancyZones 等），用 IsZoomed 查。
+        不再自己把視窗鋪滿工作區：保留原生邊框之後，鋪滿的視窗左右下會多出邊框的空隙。"""
         if not self._custom:
             return
         hwnd = self._hwnd()
         if not hwnd:
             return
-        if winctl.is_zoomed(hwnd):
-            self._maximized = True
-        elif self._maximized and not winctl.same_rect(winctl.get_rect(hwnd), winctl.work_area(hwnd)):
-            self._maximized = False
+        self._maximized = winctl.is_zoomed(hwnd)
+
+    def set_max_button(self, left, top, width, height, dpr):
+        """網頁回報自製最大化鈕在頁面裡的位置（CSS 像素）；寬或高為 0 表示按鈕不在畫面上。
+        Windows 11 要在那個位置蓋一個透明的子視窗，才叫得出貼齊版面（WebView2 把滑鼠擋在頂層視窗之外）。
+        回傳覆蓋層是否生效。"""
+        if not self._custom or not winctl.snap_layouts_supported() or self._window is None:
+            return False
+        try:
+            left, top, width, height, dpr = (float(v) for v in (left, top, width, height, dpr))
+        except (TypeError, ValueError):
+            return False
+        if not all(map(math.isfinite, (left, top, width, height, dpr))) or not 0.5 <= dpr <= 8 or not 0 <= width <= 400 or not 0 <= height <= 200:
+            return False
+        if width < 1 or height < 1:
+            self._max_rect = None
+        else:
+            self._max_rect = (round(left * dpr), round(top * dpr), max(1, round(width * dpr)), max(1, round(height * dpr)))
+        return self._place_max_overlay()
+
+    def _place_max_overlay(self):
+        """把覆蓋層擺到最後一次回報的位置（全螢幕時藏起來）。覆蓋層要在 UI 執行緒建立與操作，所以轉過去執行。"""
+        if self._window is None or sys.platform != "win32" or not winctl.snap_layouts_supported():
+            return False
+        hwnd = self._hwnd()
+        if not hwnd:
+            return False
+        rect = None if self._fullscreen else self._max_rect
+
+        def run():
+            try:
+                winctl.place_max_button_overlay(hwnd, rect, self._push_max_state)
+            except Exception as e:  # noqa: BLE001 — 少了貼齊版面選單而已；最大化鈕本身仍可用
+                print(f"無法放置最大化鈕的覆蓋層：{e}", file=sys.stderr)
+
+        try:
+            from System import Func, Type
+
+            self._window.native.Invoke(Func[Type](run))
+        except Exception as e:  # noqa: BLE001
+            print(f"無法切到 UI 執行緒：{e}", file=sys.stderr)
+            return False
+        return True
+
+    def _push_max_state(self, state):
+        """覆蓋層（UI 執行緒）回報滑鼠在最大化鈕上的狀態：交給背景執行緒通知網頁（UI 執行緒上 evaluate_js 會死鎖），
+        只推最新的狀態，轉換很快時不會亂序。"""
+        self._max_state = state
+        if self._max_pushing:
+            return
+        self._max_pushing = True
+
+        def worker():
+            sent = None
+            try:
+                while sent != self._max_state:
+                    sent = self._max_state
+                    self._window.evaluate_js(f"window.__maxButtonState && window.__maxButtonState({int(sent)})")
+            except Exception:  # noqa: BLE001 — 頁面不在了就算了
+                pass
+            finally:
+                self._max_pushing = False
+
+        threading.Thread(target=worker, name="max-button-state", daemon=True).start()
 
     def cursor_pos(self):
         """系統游標位置 [x, y]（網頁用它判斷滑鼠有沒有在 YouTube 的 iframe 裡移動）；不支援的系統回 None。"""
@@ -435,7 +499,7 @@ class _DesktopApi:
             self._window.minimize()
 
     def window_toggle_maximize(self):
-        """最大化／還原。最大化是鋪滿螢幕「工作區」（不蓋住工作列），由我們自己記住原本的範圍。"""
+        """最大化／還原。Windows 用系統的最大化（工作區範圍，不蓋住工作列，還原時回到原本的位置與大小）。"""
         self._sync_maximized()
         hwnd = self._hwnd() if self._custom else None
         if self._custom and sys.platform != "win32" and self._window is not None:
@@ -446,16 +510,11 @@ class _DesktopApi:
             except Exception as e:  # noqa: BLE001 — 後端不支援就維持原狀
                 print(f"無法切換最大化：{e}", file=sys.stderr)
         elif hwnd:
-            if winctl.is_zoomed(hwnd):  # 系統最大化：用系統的還原（回到最大化之前的位置與大小）
+            if winctl.is_zoomed(hwnd):  # 用系統的還原（回到最大化之前的位置與大小）
                 winctl.restore(hwnd)
                 self._maximized = False
-            elif self._maximized:
-                if self._normal_rect:
-                    winctl.set_rect(hwnd, *self._normal_rect)
-                self._maximized = False
             else:
-                self._normal_rect = winctl.get_rect(hwnd)
-                winctl.set_rect(hwnd, *winctl.work_area(hwnd))
+                winctl.maximize(hwnd)
                 self._maximized = True
         return self.window_state()
 
